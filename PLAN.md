@@ -7,10 +7,10 @@ This document tracks the progress of the MVP implementation. Every task must adh
     - [x] Install `react-router-dom`, `@supabase/supabase-js`, `lucide-react`, `clsx`, `tailwind-merge` (optional utilities).
     - [x] Scaffold directory structure: `/services`, `/hooks`, `/context`, `/types`, `/lib`.
     - [x] Initialize Supabase client in `src/lib/supabase.ts`.
-- [ ] **1.2 Authentication & RBAC**
-    - [ ] Create `AuthService` for Supabase Auth abstraction.
-    - [ ] Implement `AuthContext` with Profile hydration (Role & Company ID).
-    - [ ] Create `useAuth` hook.
+- [x] **1.2 Authentication & RBAC**
+    - [x] Create `AuthService` for Supabase Auth abstraction.
+    - [x] Implement `AuthContext` with Profile hydration (Role & Company ID).
+    - [x] Create `useAuth` hook.
 - [ ] **1.3 Routing & Layout**
     - [ ] Setup `react-router-dom` with role-based Route Guards.
     - [ ] Create `MainLayout` with responsive navigation.
