@@ -1,3 +1,5 @@
+import type { User } from '@supabase/supabase-js';
+
 export type UserRole = 'owner' | 'ops' | 'auditor';
 
 export interface UserProfile {
@@ -10,7 +12,7 @@ export interface UserProfile {
 }
 
 export interface AuthState {
-  user: any | null; // Supabase User type
+  user: User | null;
   profile: UserProfile | null;
   loading: boolean;
   error: string | null;
