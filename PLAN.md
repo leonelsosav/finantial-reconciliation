@@ -11,10 +11,10 @@ This document tracks the progress of the MVP implementation. Every task must adh
     - [x] Create `AuthService` for Supabase Auth abstraction.
     - [x] Implement `AuthContext` with Profile hydration (Role & Company ID).
     - [x] Create `useAuth` hook.
-- [ ] **1.3 Routing & Layout**
-    - [ ] Setup `react-router-dom` with role-based Route Guards.
-    - [ ] Create `MainLayout` with responsive navigation.
-    - [ ] Implement Spanish-language `Login` page.
+- [x] **1.3 Routing & Layout**
+    - [x] Setup `react-router-dom` with role-based Route Guards.
+    - [x] Create `MainLayout` with responsive navigation.
+    - [x] Implement Spanish-language `Login` page.
 
 ## Phase 2: Database & Operational Console (Staff Input)
 - [ ] **2.1 Database Schema & RLS**
