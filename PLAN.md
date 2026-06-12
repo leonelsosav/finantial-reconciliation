@@ -3,10 +3,10 @@
 This document tracks the progress of the MVP implementation. Every task must adhere to the project's architectural rules and SCSS module standards.
 
 ## Phase 1: Infrastructure & Core Identity (Foundation)
-- [ ] **1.1 Environment & Dependencies**
-    - [ ] Install `react-router-dom`, `@supabase/supabase-js`, `lucide-react`, `clsx`, `tailwind-merge` (optional utilities).
-    - [ ] Scaffold directory structure: `/services`, `/hooks`, `/context`, `/types`, `/lib`.
-    - [ ] Initialize Supabase client in `src/lib/supabase.ts`.
+- [x] **1.1 Environment & Dependencies**
+    - [x] Install `react-router-dom`, `@supabase/supabase-js`, `lucide-react`, `clsx`, `tailwind-merge` (optional utilities).
+    - [x] Scaffold directory structure: `/services`, `/hooks`, `/context`, `/types`, `/lib`.
+    - [x] Initialize Supabase client in `src/lib/supabase.ts`.
 - [ ] **1.2 Authentication & RBAC**
     - [ ] Create `AuthService` for Supabase Auth abstraction.
     - [ ] Implement `AuthContext` with Profile hydration (Role & Company ID).
