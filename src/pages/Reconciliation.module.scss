@@ -133,23 +133,35 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1.5rem;
+  align-items: start;
 }
 
 .column {
-  height: 500px;
-  display: flex;
-  flex-direction: column;
-  
-  :global(.Card_content__jF2qH) { // Targets Card content
-    overflow-y: auto;
-    padding: 0;
+  // We target the internal content of the Card component
+  div[class*="content"] {
+    padding: 0 !important; // Remove padding to let items reach the edges
   }
 }
 
 .list {
   display: flex;
   flex-direction: column;
+  max-height: 600px; // Fixed height for the matching area
+  overflow-y: auto;
+
+  // Custom scrollbar for better look
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  &::-webkit-scrollbar-track {
+    background: #f1f5f9;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 10px;
+  }
 }
+
 
 .item {
   display: flex;

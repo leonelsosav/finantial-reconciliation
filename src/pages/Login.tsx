@@ -69,7 +69,7 @@ export const Login = () => {
           />
         </div>
 
-        <button type="submit" disabled={loading}>
+        <button type="submit" disabled={loading} className={styles.loginButton}>
           {loading ? 'Cargando...' : 'Iniciar Sesión'}
         </button>
       </form>

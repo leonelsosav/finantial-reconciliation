@@ -67,10 +67,10 @@
   }
 }
 
-button {
+.loginButton {
   width: 100%;
   padding: 0.75rem;
-  background-color: #2563eb;
+  background-color: #2563eb !important;
   color: white;
   border: none;
   border-radius: 4px;
@@ -80,7 +80,7 @@ button {
   transition: background-color 0.2s;
 
   &:hover:not(:disabled) {
-    background-color: #1d4ed8;
+    background-color: #1d4ed8 !important;
   }
 
   &:disabled {
