@@ -6,6 +6,7 @@ import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Ledger } from './pages/Ledger';
 import { BankManagement } from './pages/BankManagement';
+import { Reconciliation } from './pages/Reconciliation';
 
 export const App = () => {
   return (
@@ -22,8 +23,7 @@ export const App = () => {
             <Route path="/" element={<Dashboard />} />
             <Route path="/ledger" element={<Ledger />} />
             <Route path="/bank" element={<BankManagement />} />
-            {/* Placeholder routes for next phases */}
-            <Route path="/reconciliation" element={<div>Conciliación (Próximamente)</div>} />
+            <Route path="/reconciliation" element={<Reconciliation />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

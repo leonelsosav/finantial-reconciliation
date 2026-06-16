@@ -17,7 +17,10 @@ export const MainLayout = () => {
       <aside className={styles.sidebar}>
         <div className={styles.logo}>
           <h2>Conciliación</h2>
-          <span className={styles.roleTag}>{profile?.role}</span>
+          <span className={styles.roleTag}>
+            {profile?.role === 'owner' ? 'Administrador' : 
+             profile?.role === 'ops' ? 'Operaciones' : 'Auditor'}
+          </span>
         </div>
 
         <nav className={styles.nav}>
