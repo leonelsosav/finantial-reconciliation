@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../hooks/useAuth';
 import styles from './Login.module.scss';
 
 export const Login = () => {
@@ -7,6 +9,15 @@ export const Login = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (user) {
+      navigate('/');
+    }
+  }, [user, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,6 +31,7 @@ export const Login = () => {
       });
 
       if (error) throw error;
+      // navigate('/') will be handled by the useEffect above when user state changes
     } catch (err: any) {
       setError(err.message || 'Error al iniciar sesión');
     } finally {
