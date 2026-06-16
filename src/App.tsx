@@ -4,6 +4,8 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { MainLayout } from './components/MainLayout';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
+import { Ledger } from './pages/Ledger';
+import { BankManagement } from './pages/BankManagement';
 
 export const App = () => {
   return (
@@ -18,10 +20,10 @@ export const App = () => {
             </ProtectedRoute>
           }>
             <Route path="/" element={<Dashboard />} />
+            <Route path="/ledger" element={<Ledger />} />
+            <Route path="/bank" element={<BankManagement />} />
             {/* Placeholder routes for next phases */}
-            <Route path="/ledger" element={<div>Libro Diario (Próximamente)</div>} />
             <Route path="/reconciliation" element={<div>Conciliación (Próximamente)</div>} />
-            <Route path="/bank" element={<div>Bancos (Próximamente)</div>} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
