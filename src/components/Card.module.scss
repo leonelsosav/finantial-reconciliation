@@ -1,0 +1,28 @@
+@import '../styles/variables';
+
+.card {
+  background: $bg-card;
+  border-radius: 12px;
+  box-shadow: $shadow-sm;
+  border: 1px solid $border-light;
+  overflow: hidden;
+}
+
+.header {
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid $border-light;
+
+  h2 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: $text-main;
+    font-weight: 600;
+  }
+}
+
+.content {
+  padding: 1.5rem;
+}
