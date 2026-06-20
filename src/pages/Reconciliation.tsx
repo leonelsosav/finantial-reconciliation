@@ -149,9 +149,9 @@ export const Reconciliation = () => {
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('es-MX', {
       style: 'currency',
-      currency: 'USD',
+      currency: 'MXN',
     }).format(Math.abs(amount));
   };
 
@@ -185,28 +185,28 @@ export const Reconciliation = () => {
               <UploadCloud size={24} />
             </div>
             <div>
-              <h3 className={styles.dropZoneTitle}>Drag & Drop Bank Statements</h3>
-              <p className={styles.dropZoneSub}>PDF or CSV formats accepted. System parses text via OCR automatically.</p>
+              <h3 className={styles.dropZoneTitle}>Arrastrar y soltar estados de cuenta bancarios</h3>
+              <p className={styles.dropZoneSub}>Formatos aceptados: PDF o CSV. El sistema procesa el texto mediante OCR automáticamente.</p>
             </div>
           </div>
           <div className={styles.dropZoneRight}>
             <div className={styles.activeBatch}>
-              <span className={styles.batchLabel}>Active Batch</span>
+              <span className={styles.batchLabel}>Lote Activo</span>
               <span className={styles.batchValue}>Q3_Chase_Sept_2023.pdf</span>
             </div>
-            <button className={styles.browseBtn}>Browse Files</button>
+            <button className={styles.browseBtn}>Buscar archivos</button>
           </div>
         </div>
 
         <div className={styles.controlsRight}>
           <div className={styles.entityInputGroup}>
-            <label className={styles.entityLabel}>Internal Entity</label>
+            <label className={styles.entityLabel}>Entidad Interna</label>
             <select 
               value={selectedCompany} 
               onChange={(e) => setSelectedCompany(e.target.value)}
               className={styles.companySelect}
             >
-              <option value="">Select Enterprise...</option>
+              <option value="">Seleccionar empresa...</option>
               {companies.map(c => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
@@ -218,7 +218,7 @@ export const Reconciliation = () => {
             disabled={isProcessing || bankTxs.length === 0}
           >
             <Sparkles size={16} />
-            <span>Execute Auto-Match</span>
+            <span>Ejecutar auto-conciliación</span>
           </button>
         </div>
       </section>
@@ -230,18 +230,18 @@ export const Reconciliation = () => {
           <div className={styles.columnHeader}>
             <div className={styles.titleWithIcon}>
               <Building2 size={16} className={styles.columnTitleIcon} />
-              <h2 className={styles.columnTitle}>Unreconciled Bank Transactions</h2>
+              <h2 className={styles.columnTitle}>Transacciones bancarias sin conciliar</h2>
             </div>
             <span className={`${styles.badge} ${styles.badgePrimary}`}>
-              {bankTxs.length} Pending
+              {bankTxs.length} Pendiente{bankTxs.length !== 1 ? 's' : ''}
             </span>
           </div>
 
           <div className={styles.listContainer}>
             {loadingBank ? (
-              <p className={styles.infoText}>Loading transactions...</p>
+              <p className={styles.infoText}>Cargando transacciones...</p>
             ) : bankTxs.length === 0 ? (
-              <p className={styles.infoText}>No pending bank transactions.</p>
+              <p className={styles.infoText}>No hay transacciones bancarias pendientes.</p>
             ) : (
               bankTxs.map(tx => {
                 const isSelected = selectedBankTx?.id === tx.id;
@@ -260,7 +260,7 @@ export const Reconciliation = () => {
                       <div>
                         <span className={styles.itemDate}>{tx.transaction_date}</span>
                         <h4 className={`${styles.itemName} ${isSelected ? styles.textActive : ''}`}>
-                          {tx.description || 'Bank Transaction'}
+                          {tx.description || 'Transacción bancaria'}
                         </h4>
                       </div>
                     </div>
@@ -272,7 +272,7 @@ export const Reconciliation = () => {
                         <button 
                           className={styles.miniActionBtn}
                           onClick={(e) => { e.stopPropagation(); markAsNonInvoiced(tx); }}
-                          title="Mark as Non-Invoiced"
+                          title="Marcar como no facturado"
                         >
                           <Info size={14} />
                         </button>
@@ -290,23 +290,23 @@ export const Reconciliation = () => {
           <div className={styles.columnHeader}>
             <div className={styles.titleWithIcon}>
               <FileText size={16} className={styles.columnTitleIcon} />
-              <h2 className={styles.columnTitle}>Unlinked Staff Records</h2>
+              <h2 className={styles.columnTitle}>Registros de personal sin vincular</h2>
             </div>
             <span className={`${styles.badge} ${styles.badgeSuccess}`}>
-              {staffRecords.length} Records
+              {staffRecords.length} Registro{staffRecords.length !== 1 ? 's' : ''}
             </span>
           </div>
 
           <div className={styles.listContainer}>
             <div className={styles.filterMeta}>
               <Filter size={12} className={styles.filterIcon} />
-              <span>FILTERED BY OPERATIONS IN ACTIVE ENTITY</span>
+              <span>FILTRADO POR OPERACIONES EN LA ENTIDAD ACTIVA</span>
             </div>
 
             {loadingStaff ? (
-              <p className={styles.infoText}>Loading staff records...</p>
+              <p className={styles.infoText}>Cargando registros de personal...</p>
             ) : staffRecords.length === 0 ? (
-              <p className={styles.infoText}>No pending staff records.</p>
+              <p className={styles.infoText}>No hay registros de personal pendientes.</p>
             ) : (
               staffRecords.map(record => {
                 const isSelected = selectedStaffRecord?.id === record.id;
@@ -322,7 +322,7 @@ export const Reconciliation = () => {
                       </div>
                       <div>
                         <h4 className={`${styles.itemName} ${isSelected ? styles.textActive : ''}`}>
-                          {record.clients?.name || 'Unknown Client'}
+                          {record.clients?.name || 'Cliente desconocido'}
                         </h4>
                         <span className={`${styles.typeTag} ${
                           record.entry_type === 'payroll' 
@@ -332,10 +332,10 @@ export const Reconciliation = () => {
                             : styles.tagFee
                         }`}>
                           {record.entry_type === 'payroll' 
-                            ? 'payroll_funding' 
+                            ? 'fondeo_nomina' 
                             : record.entry_type === 'funding' 
-                            ? 'retainer_injection' 
-                            : 'fee_charge'}
+                            ? 'inyeccion_retainer' 
+                            : 'cargo_comision'}
                         </span>
                       </div>
                     </div>
@@ -354,7 +354,7 @@ export const Reconciliation = () => {
       <section className={styles.floatingActionBar}>
         <div className={styles.actionLeft}>
           <div className={styles.valSummary}>
-            <span className={styles.valLabel}>Selected Matching Value</span>
+            <span className={styles.valLabel}>Valor de coincidencia seleccionado</span>
             <span className={styles.valAmount}>{formatCurrency(selectedValue)}</span>
           </div>
           <div className={styles.verticalDivider}></div>
@@ -363,18 +363,18 @@ export const Reconciliation = () => {
               isMatchPerfect ? (
                 <div className={styles.statusSuccess}>
                   <CheckCircle2 size={16} />
-                  <span>Perfect Match Detected</span>
+                  <span>Coincidencia perfecta detectada</span>
                 </div>
               ) : (
                 <div className={styles.statusWarning}>
                   <AlertTriangle size={16} />
-                  <span>Amount Mismatch</span>
+                  <span>Diferencia en montos</span>
                 </div>
               )
             ) : (
               <div className={styles.statusInfo}>
                 <Info size={16} />
-                <span>Awaiting Selection Pair</span>
+                <span>Esperando par de selección</span>
               </div>
             )}
           </div>
@@ -389,14 +389,14 @@ export const Reconciliation = () => {
             }}
             disabled={!selectedBankTx && !selectedStaffRecord}
           >
-            Discard Draft
+            Descartar borrador
           </button>
           <button 
             className={styles.commitBtn}
             onClick={handleMatch}
             disabled={!selectedBankTx || !selectedStaffRecord || isProcessing}
           >
-            <span>{isProcessing ? 'Processing...' : 'Commit Pair'}</span>
+            <span>{isProcessing ? 'Procesando...' : 'Confirmar par'}</span>
             <ArrowRight size={14} />
           </button>
         </div>

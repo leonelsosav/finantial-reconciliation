@@ -26,14 +26,14 @@ const CHART_DAYS = [
   { day: 'Nov 25', inflow: 65, outflow: 50 },
   { day: 'Nov 28', inflow: 50, outflow: 40 },
   { day: 'Nov 30', inflow: 80, outflow: 75 },
-  { day: 'Today', inflow: 95, outflow: 85 },
+  { day: 'Hoy', inflow: 95, outflow: 85 },
 ];
 
 const RETAINER_HEALTH = [
-  { name: 'Global Tech Solutions Corp', pct: 82, cap: '$1.2M Cap', used: '-$984k Used', variant: 'primary' },
-  { name: 'Horizon Financial Partners', pct: 45, cap: '$850k Cap', used: '-$382k Used', variant: 'success' },
-  { name: 'Nexus Logistics Group', pct: 95, cap: '$500k Cap', used: 'Low Balance', variant: 'danger' },
-  { name: 'Stellar Media Systems', pct: 12, cap: '$1.5M Cap', used: '-$180k Used', variant: 'neutral' },
+  { name: 'Global Tech Solutions Corp', pct: 82, cap: '$1.2M Límite', used: '-$984k Usado', variant: 'primary' },
+  { name: 'Horizon Financial Partners', pct: 45, cap: '$850k Límite', used: '-$382k Usado', variant: 'success' },
+  { name: 'Nexus Logistics Group', pct: 95, cap: '$500k Límite', used: 'Saldo Bajo', variant: 'danger' },
+  { name: 'Stellar Media Systems', pct: 12, cap: '$1.5M Límite', used: '-$180k Usado', variant: 'neutral' },
 ];
 
 export const Dashboard = () => {
@@ -55,9 +55,9 @@ export const Dashboard = () => {
   }, [profile, fetchRecords]);
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('es-MX', {
       style: 'currency',
-      currency: 'USD',
+      currency: 'MXN',
     }).format(amount);
   };
 
@@ -65,9 +65,9 @@ export const Dashboard = () => {
     <div className={styles.container}>
       {/* Breadcrumbs */}
       <div className={styles.breadcrumbs}>
-        <span>Main Hub</span>
+        <span>Inicio</span>
         <span className={styles.separator}>/</span>
-        <span className={styles.activePage}>Executive Dashboard</span>
+        <span className={styles.activePage}>Panel Ejecutivo</span>
       </div>
 
       {/* Top Row: Metric Cards */}
@@ -76,7 +76,7 @@ export const Dashboard = () => {
         <div className={`${styles.metricCard} ${styles.cardPrimary}`}>
           <div className={styles.cardIndicator}></div>
           <div className={styles.cardHeader}>
-            <span className={styles.cardTitle}>Total Bank Cash Flow</span>
+            <span className={styles.cardTitle}>Flujo de Caja Bancario Total</span>
             <div className={`${styles.cardIcon} ${styles.iconPrimary}`}>
               <TrendingUp size={16} />
             </div>
@@ -85,14 +85,14 @@ export const Dashboard = () => {
             <h2 className={styles.cardValue}>{formatCurrency(financials.totalCashFlow)}</h2>
             <span className={styles.cardBadge}>+4.2%</span>
           </div>
-          <p className={styles.cardSub}>Aggregate across 17 entities</p>
+          <p className={styles.cardSub}>Consolidado de 17 entidades</p>
         </div>
 
         {/* Card 2: True Net Utility */}
         <div className={`${styles.metricCard} ${styles.cardSuccess}`}>
           <div className={styles.cardIndicator}></div>
           <div className={styles.cardHeader}>
-            <span className={styles.cardTitle}>True Net Utility</span>
+            <span className={styles.cardTitle}>Utilidad Neta Real</span>
             <div className={`${styles.cardIcon} ${styles.iconSuccess}`}>
               <Percent size={16} />
             </div>
@@ -101,39 +101,39 @@ export const Dashboard = () => {
             <h2 className={styles.cardValue}>{formatCurrency(financials.netUtility)}</h2>
             <span className={styles.cardBadge}>+1.8%</span>
           </div>
-          <p className={styles.cardSub}>Post commissions & fees</p>
+          <p className={styles.cardSub}>Después de comisiones y tarifas</p>
         </div>
 
         {/* Card 3: Active Client Retainers */}
         <div className={`${styles.metricCard} ${styles.cardNeutral}`}>
           <div className={styles.cardIndicator}></div>
           <div className={styles.cardHeader}>
-            <span className={styles.cardTitle}>Active Client Retainers</span>
+            <span className={styles.cardTitle}>Retainers Activos de Clientes</span>
             <div className={`${styles.cardIcon} ${styles.iconNeutral}`}>
               <Wallet size={16} />
             </div>
           </div>
           <div className={styles.cardContent}>
             <h2 className={styles.cardValue}>{formatCurrency(financials.retainerBalance)}</h2>
-            <span className={`${styles.cardBadge} ${styles.badgeStable}`}>STABLE</span>
+            <span className={`${styles.cardBadge} ${styles.badgeStable}`}>ESTABLE</span>
           </div>
-          <p className={styles.cardSub}>Current Escrow Capital</p>
+          <p className={styles.cardSub}>Capital Operativo en Garantía</p>
         </div>
 
         {/* Card 4: Unreconciled Anomalies */}
         <div className={`${styles.metricCard} ${styles.cardDanger}`}>
           <div className={styles.cardIndicator}></div>
           <div className={styles.cardHeader}>
-            <span className={styles.cardTitle}>Unreconciled Anomalies</span>
+            <span className={styles.cardTitle}>Anomalías sin Conciliar</span>
             <div className={`${styles.cardIcon} ${styles.iconDanger}`}>
               <AlertTriangle size={16} />
             </div>
           </div>
           <div className={styles.cardContent}>
             <h2 className={styles.cardValue}>{financials.unreconciledCount}</h2>
-            <span className={`${styles.cardBadge} ${styles.badgeDanger}`}>CRITICAL</span>
+            <span className={`${styles.cardBadge} ${styles.badgeDanger}`}>CRÍTICO</span>
           </div>
-          <p className={styles.cardSub}>Immediate action required</p>
+          <p className={styles.cardSub}>Acción inmediata requerida</p>
         </div>
       </div>
 
@@ -143,21 +143,21 @@ export const Dashboard = () => {
         <section className={styles.chartSection}>
           <div className={styles.sectionHeader}>
             <div>
-              <h3 className={styles.sectionTitle}>Daily Cash Inflow vs. Outflow</h3>
-              <p className={styles.sectionSub}>30-day liquidity visualization</p>
+              <h3 className={styles.sectionTitle}>Entradas vs. Salidas Diarias</h3>
+              <p className={styles.sectionSub}>Visualización de liquidez a 30 días</p>
             </div>
             <div className={styles.chartControls}>
               <div className={styles.legendItem}>
                 <span className={`${styles.legendDot} ${styles.dotPrimary}`}></span>
-                <span>Inflow</span>
+                <span>Entradas</span>
               </div>
               <div className={styles.legendItem}>
                 <span className={`${styles.legendDot} ${styles.dotSuccess}`}></span>
-                <span>Outflow</span>
+                <span>Salidas</span>
               </div>
               <select className={styles.chartSelect}>
-                <option>Last 30 Days</option>
-                <option>Last Quarter</option>
+                <option>Últimos 30 Días</option>
+                <option>Último Trimestre</option>
               </select>
             </div>
           </div>
@@ -170,12 +170,12 @@ export const Dashboard = () => {
                     <div 
                       className={`${styles.barInflow} ${d.active ? styles.barActive : ''}`} 
                       style={{ height: `${d.inflow}%` }}
-                      title={`Inflow: ${d.inflow}%`}
+                      title={`Entradas: ${d.inflow}%`}
                     ></div>
                     <div 
                       className={`${styles.barOutflow} ${d.active ? styles.barActive : ''}`} 
                       style={{ height: `${d.outflow}%` }}
-                      title={`Outflow: ${d.outflow}%`}
+                      title={`Salidas: ${d.outflow}%`}
                     ></div>
                   </div>
                 </div>
@@ -191,8 +191,8 @@ export const Dashboard = () => {
 
         {/* Retainer Health Panel */}
         <section className={styles.healthSection}>
-          <h3 className={styles.sectionTitle}>Retainer Health</h3>
-          <p className={styles.sectionSub}>Balances vs. Disbursed Payroll</p>
+          <h3 className={styles.sectionTitle}>Salud de Retainers</h3>
+          <p className={styles.sectionSub}>Saldos vs. Nóminas Dispersadas</p>
 
           <div className={styles.healthList}>
             {RETAINER_HEALTH.map((item, index) => (
@@ -216,7 +216,7 @@ export const Dashboard = () => {
           </div>
 
           <button className={styles.viewRetainersBtn}>
-            <span>View All Client Retainers</span>
+            <span>Ver todos los Retainers de Clientes</span>
             <ArrowRight size={14} />
           </button>
         </section>
@@ -225,7 +225,7 @@ export const Dashboard = () => {
       {/* Bottom Detail Table: Recent Large Volume Transactions */}
       <section className={styles.tableSection}>
         <div className={styles.tableHeader}>
-          <h3 className={styles.tableTitle}>Recent Large Volume Transactions</h3>
+          <h3 className={styles.tableTitle}>Transacciones Recientes de Gran Volumen</h3>
           <div className={styles.tableActions}>
             <button className={styles.tableBtn}>
               <Filter size={16} />
@@ -238,39 +238,39 @@ export const Dashboard = () => {
 
         <div className={styles.tableWrapper}>
           {loading ? (
-            <p className={styles.loadingText}>Loading transactions...</p>
+            <p className={styles.loadingText}>Cargando transacciones...</p>
           ) : records.length === 0 ? (
-            <p className={styles.emptyText}>No recent transactions found.</p>
+            <p className={styles.emptyText}>No se encontraron transacciones recientes.</p>
           ) : (
             <table className={styles.table}>
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Entity</th>
-                  <th>Type</th>
-                  <th>Status</th>
-                  <th className={styles.textRight}>Amount</th>
+                  <th>Fecha</th>
+                  <th>Entidad</th>
+                  <th>Tipo</th>
+                  <th>Estado</th>
+                  <th className={styles.textRight}>Monto</th>
                 </tr>
               </thead>
               <tbody>
                 {records.slice(0, 5).map(record => (
                   <tr key={record.id} className={styles.row}>
                     <td className={styles.cellMono}>{record.operation_date}</td>
-                    <td className={styles.cellBold}>{record.clients?.name || 'Unknown Entity'}</td>
+                    <td className={styles.cellBold}>{record.clients?.name || 'Entidad Desconocida'}</td>
                     <td>
                       <span className={styles.typeBadge}>
                         {record.entry_type === 'funding' 
-                          ? 'CLIENT_RETAINER' 
+                          ? 'FONDEO_RETAINER' 
                           : record.entry_type === 'fee' 
-                          ? 'RECON_ADJUST' 
-                          : 'PAYROLL_DISB'}
+                          ? 'AJUSTE_COMISION' 
+                          : 'DISPERSION_NOMINA'}
                       </span>
                     </td>
                     <td>
                       <div className={styles.statusCell}>
                         <span className={`${styles.statusDot} ${record.is_reconciled ? styles.dotSuccess : styles.dotDanger}`}></span>
                         <span className={`${styles.statusText} ${record.is_reconciled ? styles.textSuccess : styles.textDanger}`}>
-                          {record.is_reconciled ? 'Matched' : 'Flagged'}
+                          {record.is_reconciled ? 'Conciliado' : 'Pendiente'}
                         </span>
                       </div>
                     </td>

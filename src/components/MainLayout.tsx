@@ -45,7 +45,7 @@ export const MainLayout = () => {
           </div>
           <div>
             <h1 className={styles.logoTitle}>Única Fuente</h1>
-            <p className={styles.logoSub}>Source of Truth</p>
+            <p className={styles.logoSub}>Fuente de Verdad</p>
           </div>
         </div>
 
@@ -64,7 +64,7 @@ export const MainLayout = () => {
               className={({ isActive }) => `${styles.navItem} ${isActive ? styles.active : ''}`}
             >
               <ShieldCheck size={18} />
-              <span>Reconciliations</span>
+              <span>Conciliaciones</span>
             </NavLink>
           )}
 
@@ -74,7 +74,7 @@ export const MainLayout = () => {
               className={({ isActive }) => `${styles.navItem} ${isActive ? styles.active : ''}`}
             >
               <FileSpreadsheet size={18} />
-              <span>Payroll Runs</span>
+              <span>Libro Diario</span>
             </NavLink>
           )}
 
@@ -84,7 +84,7 @@ export const MainLayout = () => {
               className={({ isActive }) => `${styles.navItem} ${isActive ? styles.active : ''}`}
             >
               <Landmark size={18} />
-              <span>Entity Manager</span>
+              <span>Gestión de Bancos</span>
             </NavLink>
           )}
         </nav>
@@ -95,17 +95,17 @@ export const MainLayout = () => {
             className={styles.newReconBtn}
           >
             <Plus size={16} />
-            <span>New Reconciliation</span>
+            <span>Nueva Conciliación</span>
           </button>
 
           <div className={styles.footerLink}>
             <User size={16} />
-            <span>User Profile</span>
+            <span>Perfil de Usuario</span>
           </div>
 
           <button onClick={handleSignOut} className={styles.logoutBtn}>
             <LogOut size={16} />
-            <span>Sign Out</span>
+            <span>Cerrar Sesión</span>
           </button>
         </div>
       </aside>
@@ -117,9 +117,9 @@ export const MainLayout = () => {
           <div className={styles.headerLeft}>
             <div className={styles.entitySelector}>
               <Building2 size={16} className={styles.entityIcon} />
-              <span className={styles.entityLabel}>Entity Selector:</span>
+              <span className={styles.entityLabel}>Selector de Entidad:</span>
               <span className={styles.entityValue}>
-                {profile?.role === 'owner' ? 'All Entities (17)' : 'Active Entity'}
+                {profile?.role === 'owner' ? 'Todas las Entidades (17)' : 'Entidad Activa'}
               </span>
               <ChevronDown size={14} className={styles.chevron} />
             </div>
@@ -128,7 +128,7 @@ export const MainLayout = () => {
               <Search size={16} className={styles.searchIcon} />
               <input 
                 type="text" 
-                placeholder="Search transactions, entities..." 
+                placeholder="Buscar transacciones, entidades..." 
                 className={styles.searchInput}
               />
             </div>
@@ -146,10 +146,10 @@ export const MainLayout = () => {
             
             <div className={styles.userProfile}>
               <div className={styles.userMeta}>
-                <p className={styles.userName}>{profile?.full_name || 'User'}</p>
+                <p className={styles.userName}>{profile?.full_name || 'Usuario'}</p>
                 <p className={styles.userRole}>
-                  {profile?.role === 'owner' ? 'Exec. Owner' : 
-                   profile?.role === 'ops' ? 'Ops Manager' : 'Auditor'}
+                  {profile?.role === 'owner' ? 'Propietario Ejecutivo' : 
+                   profile?.role === 'ops' ? 'Gerente de Operaciones' : 'Auditor'}
                 </p>
               </div>
               <div className={styles.avatar}>

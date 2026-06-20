@@ -64,6 +64,13 @@ export const Ledger = () => {
     }
   };
 
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('es-MX', {
+      style: 'currency',
+      currency: 'MXN',
+    }).format(amount);
+  };
+
   return (
     <div className={styles.container}>
       <header className={styles.header}>
@@ -205,7 +212,7 @@ export const Ledger = () => {
                   <td>{record.description || '-'}</td>
                   <td className={`${styles.alignRight} ${record.entry_type === 'payroll' ? styles.negative : styles.positive}`}>
                     {record.entry_type === 'payroll' ? '-' : '+'}
-                    ${record.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    {formatCurrency(record.amount)}
                   </td>
                   <td className={styles.alignCenter}>
                     <span className={`${styles.statusBadge} ${record.is_reconciled ? styles.reconciled : styles.pending}`}>
