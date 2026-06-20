@@ -1,8 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useDatabase } from '../hooks/useDatabase';
-import { useFinancials } from '../hooks/useFinancials';
-import type { StaffRecord } from '../types';
+import type { StaffRecord, BankTransaction, Client } from '../types';
 import { 
   TrendingUp, 
   Wallet, 
@@ -14,51 +14,234 @@ import {
 } from 'lucide-react';
 import styles from './Dashboard.module.scss';
 
-const CHART_DAYS = [
-  { day: 'Nov 01', inflow: 40, outflow: 30 },
-  { day: 'Nov 04', inflow: 55, outflow: 45 },
-  { day: 'Nov 07', inflow: 45, outflow: 50 },
-  { day: 'Nov 10', inflow: 70, outflow: 60 },
-  { day: 'Nov 13', inflow: 60, outflow: 55 },
-  { day: 'Nov 16', inflow: 85, outflow: 70 },
-  { day: 'Nov 19', inflow: 75, outflow: 80 },
-  { day: 'Nov 22', inflow: 90, outflow: 85, active: true },
-  { day: 'Nov 25', inflow: 65, outflow: 50 },
-  { day: 'Nov 28', inflow: 50, outflow: 40 },
-  { day: 'Nov 30', inflow: 80, outflow: 75 },
-  { day: 'Hoy', inflow: 95, outflow: 85 },
-];
-
-const RETAINER_HEALTH = [
-  { name: 'Global Tech Solutions Corp', pct: 82, cap: '$1.2M Límite', used: '-$984k Usado', variant: 'primary' },
-  { name: 'Horizon Financial Partners', pct: 45, cap: '$850k Límite', used: '-$382k Usado', variant: 'success' },
-  { name: 'Nexus Logistics Group', pct: 95, cap: '$500k Límite', used: 'Saldo Bajo', variant: 'danger' },
-  { name: 'Stellar Media Systems', pct: 12, cap: '$1.5M Límite', used: '-$180k Usado', variant: 'neutral' },
-];
-
 export const Dashboard = () => {
-  const { profile } = useAuth();
-  const { data: records, loading, fetchData: fetchRecords } = useDatabase<StaffRecord>('staff_records');
-  const financials = useFinancials(records);
+  const { profile, selectedCompanyId } = useAuth();
+  const navigate = useNavigate();
+
+  const { data: records, loading: loadingRecords, fetchData: fetchRecords } = useDatabase<StaffRecord>('staff_records');
+  const { data: bankTxs, loading: loadingTxs, fetchData: fetchTxs } = useDatabase<BankTransaction>('bank_transactions');
+  const { data: clients, loading: loadingClients, fetchData: fetchClients } = useDatabase<Client>('clients');
+
+  const [timeframe, setTimeframe] = useState<'30days' | '7days' | '90days' | 'currentMonth'>('30days');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'reconciled' | 'pending'>('all');
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+
+  const isLoading = loadingRecords || loadingTxs || loadingClients;
 
   useEffect(() => {
     const options: any = {
       select: '*, clients(name)',
-      sort: { column: 'created_at', direction: 'desc' }
+      sort: { column: 'operation_date', direction: 'desc' }
     };
+    if (selectedCompanyId) {
+      options.filters = [{ column: 'internal_company_id', operator: 'eq', value: selectedCompanyId }];
+    }
+    fetchRecords(options);
+  }, [selectedCompanyId, fetchRecords]);
 
-    if (profile?.role !== 'owner' && profile?.internal_company_id) {
-      options.filters = [{ column: 'internal_company_id', operator: 'eq', value: profile.internal_company_id }];
+  useEffect(() => {
+    const options: any = {
+      sort: { column: 'transaction_date', direction: 'desc' }
+    };
+    if (selectedCompanyId) {
+      options.filters = [{ column: 'internal_company_id', operator: 'eq', value: selectedCompanyId }];
+    }
+    fetchTxs(options);
+  }, [selectedCompanyId, fetchTxs]);
+
+  useEffect(() => {
+    const options: any = {};
+    if (selectedCompanyId) {
+      options.filters = [{ column: 'internal_company_id', operator: 'eq', value: selectedCompanyId }];
+    }
+    fetchClients(options);
+  }, [selectedCompanyId, fetchClients]);
+
+  // Aggregated Metric Cards States
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+
+  const totalBankCashFlow = useMemo(() => {
+    return bankTxs
+      .filter(tx => tx.transaction_date <= todayStr)
+      .reduce((sum, tx) => sum + Number(tx.amount), 0);
+  }, [bankTxs, todayStr]);
+
+  const netUtility = useMemo(() => {
+    return records
+      .filter(r => r.entry_type === 'fee')
+      .reduce((sum, r) => sum + Number(r.amount), 0);
+  }, [records]);
+
+  const retainerBalance = useMemo(() => {
+    return records.reduce((sum, r) => {
+      if (r.entry_type === 'funding') return sum + Number(r.amount);
+      if (r.entry_type === 'payroll' || r.entry_type === 'fee') return sum - Number(r.amount);
+      return sum;
+    }, 0);
+  }, [records]);
+
+  const unreconciledCount = useMemo(() => {
+    return bankTxs.filter(tx => !tx.is_reconciled).length;
+  }, [bankTxs]);
+
+  // Generate chart data dynamically based on timeframe
+  const chartDays = useMemo(() => {
+    const today = new Date();
+    const grouped: Record<string, { inflow: number; outflow: number }> = {};
+    
+    const startDate = new Date();
+    if (timeframe === '7days') {
+      startDate.setDate(today.getDate() - 6);
+    } else if (timeframe === '30days') {
+      startDate.setDate(today.getDate() - 29);
+    } else if (timeframe === '90days') {
+      startDate.setDate(today.getDate() - 89);
+    } else if (timeframe === 'currentMonth') {
+      startDate.setDate(1);
+    }
+    
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const filteredTxs = bankTxs.filter(tx => tx.transaction_date >= startDateStr && tx.transaction_date <= todayStr);
+    
+    filteredTxs.forEach(tx => {
+      const date = tx.transaction_date;
+      if (!grouped[date]) {
+        grouped[date] = { inflow: 0, outflow: 0 };
+      }
+      const amount = Number(tx.amount);
+      if (amount > 0) {
+        grouped[date].inflow += amount;
+      } else {
+        grouped[date].outflow += Math.abs(amount);
+      }
+    });
+
+    const result: { day: string; inflow: number; outflow: number; active?: boolean }[] = [];
+    const options: Intl.DateTimeFormatOptions = { month: 'short', day: '2-digit' };
+    
+    let stepDays = 1;
+    let daysToLoop = 30;
+    
+    if (timeframe === '7days') {
+      stepDays = 1;
+      daysToLoop = 7;
+    } else if (timeframe === '30days') {
+      stepDays = 3;
+      daysToLoop = 30;
+    } else if (timeframe === '90days') {
+      stepDays = 9;
+      daysToLoop = 90;
+    } else if (timeframe === 'currentMonth') {
+      stepDays = Math.max(Math.ceil(today.getDate() / 10), 1);
+      daysToLoop = today.getDate();
+    }
+    
+    for (let i = 0; i < daysToLoop; i += stepDays) {
+      const dateObj = new Date(startDate);
+      dateObj.setDate(startDate.getDate() + i);
+      const dateStr = dateObj.toISOString().split('T')[0];
+      
+      let inflowSum = 0;
+      let outflowSum = 0;
+      
+      for (let k = 0; k < stepDays; k++) {
+        const subDate = new Date(dateObj);
+        subDate.setDate(dateObj.getDate() + k);
+        const subDateStr = subDate.toISOString().split('T')[0];
+        const dataForDay = grouped[subDateStr];
+        if (dataForDay) {
+          inflowSum += dataForDay.inflow;
+          outflowSum += dataForDay.outflow;
+        }
+      }
+      
+      const isToday = dateStr === todayStr;
+      result.push({
+        day: isToday ? 'Hoy' : dateObj.toLocaleDateString('es-MX', options),
+        inflow: inflowSum,
+        outflow: outflowSum,
+        active: isToday
+      });
     }
 
-    fetchRecords(options);
-  }, [profile, fetchRecords]);
+    const maxVal = Math.max(...result.map(r => Math.max(r.inflow, r.outflow)), 1);
+    return result.map(r => ({
+      ...r,
+      inflowPct: Math.min((r.inflow / maxVal) * 90, 90),
+      outflowPct: Math.min((r.outflow / maxVal) * 90, 90)
+    }));
+  }, [bankTxs, timeframe, todayStr]);
+
+  // Clients Retainer Health tracker
+  const retainerHealth = useMemo(() => {
+    const health = clients.map(client => {
+      const clientRecords = records.filter(r => r.client_id === client.id);
+      const funding = clientRecords.filter(r => r.entry_type === 'funding').reduce((sum, r) => sum + Number(r.amount), 0);
+      const payroll = clientRecords.filter(r => r.entry_type === 'payroll').reduce((sum, r) => sum + Number(r.amount), 0);
+      const fee = clientRecords.filter(r => r.entry_type === 'fee').reduce((sum, r) => sum + Number(r.amount), 0);
+
+      const cap = funding || 100000; 
+      const used = payroll + fee;
+      const pct = Math.min(Math.round((used / cap) * 100), 100);
+      
+      let variant: 'primary' | 'success' | 'danger' | 'neutral' = 'neutral';
+      if (pct >= 90) variant = 'danger';
+      else if (pct >= 50) variant = 'primary';
+      else if (pct > 0) variant = 'success';
+
+      return {
+        name: client.name,
+        pct,
+        cap: `${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', notation: 'compact' }).format(cap)} Límite`,
+        used: pct >= 90 ? 'Saldo Bajo' : `-${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', notation: 'compact' }).format(used)} Usado`,
+        variant
+      };
+    });
+
+    return health.sort((a, b) => b.pct - a.pct).slice(0, 4);
+  }, [clients, records]);
+
+  // Filter & segment high-volume records (> $5,000)
+  const highVolumeRecords = useMemo(() => {
+    return records.filter(r => Math.abs(Number(r.amount)) >= 5000);
+  }, [records]);
+
+  const filteredRecords = useMemo(() => {
+    return highVolumeRecords.filter(r => {
+      if (statusFilter === 'reconciled') return r.is_reconciled;
+      if (statusFilter === 'pending') return !r.is_reconciled;
+      return true;
+    });
+  }, [highVolumeRecords, statusFilter]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('es-MX', {
       style: 'currency',
       currency: 'MXN',
     }).format(amount);
+  };
+
+  const handleExportCSV = () => {
+    if (filteredRecords.length === 0) return;
+    const headers = ['Fecha', 'Entidad', 'Tipo', 'Estado', 'Monto'];
+    const rows = filteredRecords.map(r => [
+      r.operation_date,
+      r.clients?.name || 'Entidad Desconocida',
+      r.entry_type === 'funding' ? 'FONDEO_RETAINER' : r.entry_type === 'fee' ? 'AJUSTE_COMISION' : 'DISPERSION_NOMINA',
+      r.is_reconciled ? 'Conciliado' : 'Pendiente',
+      r.amount.toString()
+    ]);
+    
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" 
+      + [headers.join(','), ...rows.map(e => e.map(val => `"${val.replace(/"/g, '""')}"`).join(','))].join('\n');
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `Transacciones_Gran_Volumen_${profile?.full_name || 'Owner'}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
@@ -82,10 +265,12 @@ export const Dashboard = () => {
             </div>
           </div>
           <div className={styles.cardContent}>
-            <h2 className={styles.cardValue}>{formatCurrency(financials.totalCashFlow)}</h2>
+            <h2 className={styles.cardValue}>
+              {isLoading ? '...' : formatCurrency(totalBankCashFlow)}
+            </h2>
             <span className={styles.cardBadge}>+4.2%</span>
           </div>
-          <p className={styles.cardSub}>Consolidado de 17 entidades</p>
+          <p className={styles.cardSub}>Consolidado de transacciones históricas</p>
         </div>
 
         {/* Card 2: True Net Utility */}
@@ -98,10 +283,12 @@ export const Dashboard = () => {
             </div>
           </div>
           <div className={styles.cardContent}>
-            <h2 className={styles.cardValue}>{formatCurrency(financials.netUtility)}</h2>
+            <h2 className={styles.cardValue}>
+              {isLoading ? '...' : formatCurrency(netUtility)}
+            </h2>
             <span className={styles.cardBadge}>+1.8%</span>
           </div>
-          <p className={styles.cardSub}>Después de comisiones y tarifas</p>
+          <p className={styles.cardSub}>Acumulado de comisiones cobradas</p>
         </div>
 
         {/* Card 3: Active Client Retainers */}
@@ -114,10 +301,12 @@ export const Dashboard = () => {
             </div>
           </div>
           <div className={styles.cardContent}>
-            <h2 className={styles.cardValue}>{formatCurrency(financials.retainerBalance)}</h2>
+            <h2 className={styles.cardValue}>
+              {isLoading ? '...' : formatCurrency(retainerBalance)}
+            </h2>
             <span className={`${styles.cardBadge} ${styles.badgeStable}`}>ESTABLE</span>
           </div>
-          <p className={styles.cardSub}>Capital Operativo en Garantía</p>
+          <p className={styles.cardSub}>Balance neto depositado en garantía</p>
         </div>
 
         {/* Card 4: Unreconciled Anomalies */}
@@ -130,7 +319,9 @@ export const Dashboard = () => {
             </div>
           </div>
           <div className={styles.cardContent}>
-            <h2 className={styles.cardValue}>{financials.unreconciledCount}</h2>
+            <h2 className={styles.cardValue}>
+              {isLoading ? '...' : unreconciledCount}
+            </h2>
             <span className={`${styles.cardBadge} ${styles.badgeDanger}`}>CRÍTICO</span>
           </div>
           <p className={styles.cardSub}>Acción inmediata requerida</p>
@@ -144,78 +335,98 @@ export const Dashboard = () => {
           <div className={styles.sectionHeader}>
             <div>
               <h3 className={styles.sectionTitle}>Entradas vs. Salidas Diarias</h3>
-              <p className={styles.sectionSub}>Visualización de liquidez a 30 días</p>
+              <p className={styles.sectionSub}>Flujos de cuenta liquidados</p>
             </div>
             <div className={styles.chartControls}>
               <div className={styles.legendItem}>
                 <span className={`${styles.legendDot} ${styles.dotPrimary}`}></span>
-                <span>Entradas</span>
+                <span>Créditos (Entradas)</span>
               </div>
               <div className={styles.legendItem}>
                 <span className={`${styles.legendDot} ${styles.dotSuccess}`}></span>
-                <span>Salidas</span>
+                <span>Débitos (Salidas)</span>
               </div>
-              <select className={styles.chartSelect}>
-                <option>Últimos 30 Días</option>
-                <option>Último Trimestre</option>
+              <select 
+                className={styles.chartSelect}
+                value={timeframe}
+                onChange={(e) => setTimeframe(e.target.value as any)}
+              >
+                <option value="7days">Últimos 7 Días</option>
+                <option value="30days">Últimos 30 Días</option>
+                <option value="90days">Últimos 90 Días</option>
+                <option value="currentMonth">Mes Actual</option>
               </select>
             </div>
           </div>
 
           <div className={styles.chartContainer}>
-            <div className={styles.chartBars}>
-              {CHART_DAYS.map((d, index) => (
-                <div key={index} className={styles.barGroup}>
-                  <div className={styles.barWrapper}>
-                    <div 
-                      className={`${styles.barInflow} ${d.active ? styles.barActive : ''}`} 
-                      style={{ height: `${d.inflow}%` }}
-                      title={`Entradas: ${d.inflow}%`}
-                    ></div>
-                    <div 
-                      className={`${styles.barOutflow} ${d.active ? styles.barActive : ''}`} 
-                      style={{ height: `${d.outflow}%` }}
-                      title={`Salidas: ${d.outflow}%`}
-                    ></div>
-                  </div>
+            {isLoading ? (
+              <div className={styles.chartLoading}>Cargando gráfico...</div>
+            ) : chartDays.length === 0 ? (
+              <div className={styles.chartEmpty}>No hay datos en este período.</div>
+            ) : (
+              <>
+                <div className={styles.chartBars}>
+                  {chartDays.map((d, index) => (
+                    <div key={index} className={styles.barGroup}>
+                      <div className={styles.barWrapper}>
+                        <div 
+                          className={`${styles.barInflow} ${d.active ? styles.barActive : ''}`} 
+                          style={{ height: `${d.inflowPct}%` }}
+                          title={`Entradas: ${formatCurrency(d.inflow)}`}
+                        ></div>
+                        <div 
+                          className={`${styles.barOutflow} ${d.active ? styles.barActive : ''}`} 
+                          style={{ height: `${d.outflowPct}%` }}
+                          title={`Salidas: ${formatCurrency(d.outflow)}`}
+                        ></div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-            <div className={styles.chartLabels}>
-              {CHART_DAYS.filter((_, i) => i % 3 === 0 || i === CHART_DAYS.length - 1).map((d, i) => (
-                <span key={i}>{d.day}</span>
-              ))}
-            </div>
+                <div className={styles.chartLabels}>
+                  {chartDays.filter((_, i) => timeframe === '7days' ? true : i % 2 === 0).map((d, i) => (
+                    <span key={i}>{d.day}</span>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         </section>
 
         {/* Retainer Health Panel */}
         <section className={styles.healthSection}>
           <h3 className={styles.sectionTitle}>Salud de Retainers</h3>
-          <p className={styles.sectionSub}>Saldos vs. Nóminas Dispersadas</p>
+          <p className={styles.sectionSub}>Capacidad y uso acumulado por cliente</p>
 
           <div className={styles.healthList}>
-            {RETAINER_HEALTH.map((item, index) => (
-              <div key={index} className={styles.healthItem}>
-                <div className={styles.healthMeta}>
-                  <span className={styles.clientName}>{item.name}</span>
-                  <span className={styles.healthPct}>{item.pct}%</span>
+            {isLoading ? (
+              <p className={styles.loadingText}>Cargando salud de retainers...</p>
+            ) : retainerHealth.length === 0 ? (
+              <p className={styles.emptyText}>No hay datos de clientes.</p>
+            ) : (
+              retainerHealth.map((item, index) => (
+                <div key={index} className={styles.healthItem}>
+                  <div className={styles.healthMeta}>
+                    <span className={styles.clientName}>{item.name}</span>
+                    <span className={styles.healthPct}>{item.pct}%</span>
+                  </div>
+                  <div className={styles.progressTrack}>
+                    <div 
+                      className={`${styles.progressBar} ${styles[item.variant]}`}
+                      style={{ width: `${item.pct}%` }}
+                    ></div>
+                  </div>
+                  <div className={styles.healthDetails}>
+                    <span>{item.cap}</span>
+                    <span className={item.variant === 'danger' ? styles.lowText : ''}>{item.used}</span>
+                  </div>
                 </div>
-                <div className={styles.progressTrack}>
-                  <div 
-                    className={`${styles.progressBar} ${styles[item.variant]}`}
-                    style={{ width: `${item.pct}%` }}
-                  ></div>
-                </div>
-                <div className={styles.healthDetails}>
-                  <span>{item.cap}</span>
-                  <span className={item.variant === 'danger' ? styles.lowText : ''}>{item.used}</span>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
 
-          <button className={styles.viewRetainersBtn}>
+          <button className={styles.viewRetainersBtn} onClick={() => navigate('/ledger')}>
             <span>Ver todos los Retainers de Clientes</span>
             <ArrowRight size={14} />
           </button>
@@ -226,21 +437,43 @@ export const Dashboard = () => {
       <section className={styles.tableSection}>
         <div className={styles.tableHeader}>
           <h3 className={styles.tableTitle}>Transacciones Recientes de Gran Volumen</h3>
-          <div className={styles.tableActions}>
-            <button className={styles.tableBtn}>
+          <div className={styles.tableActions} style={{ position: 'relative' }}>
+            <button className={styles.tableBtn} onClick={() => setShowFilterDropdown(!showFilterDropdown)}>
               <Filter size={16} />
             </button>
-            <button className={styles.tableBtn}>
+            {showFilterDropdown && (
+              <div className={styles.inlineFilterDropdown}>
+                <button 
+                  className={`${styles.filterOption} ${statusFilter === 'all' ? styles.activeOption : ''}`}
+                  onClick={() => { setStatusFilter('all'); setShowFilterDropdown(false); }}
+                >
+                  Todos
+                </button>
+                <button 
+                  className={`${styles.filterOption} ${statusFilter === 'reconciled' ? styles.activeOption : ''}`}
+                  onClick={() => { setStatusFilter('reconciled'); setShowFilterDropdown(false); }}
+                >
+                  Conciliado
+                </button>
+                <button 
+                  className={`${styles.filterOption} ${statusFilter === 'pending' ? styles.activeOption : ''}`}
+                  onClick={() => { setStatusFilter('pending'); setShowFilterDropdown(false); }}
+                >
+                  Pendiente
+                </button>
+              </div>
+            )}
+            <button className={styles.tableBtn} onClick={handleExportCSV} disabled={filteredRecords.length === 0}>
               <Download size={16} />
             </button>
           </div>
         </div>
 
         <div className={styles.tableWrapper}>
-          {loading ? (
+          {isLoading ? (
             <p className={styles.loadingText}>Cargando transacciones...</p>
-          ) : records.length === 0 ? (
-            <p className={styles.emptyText}>No se encontraron transacciones recientes.</p>
+          ) : filteredRecords.length === 0 ? (
+            <p className={styles.emptyText}>No se encontraron transacciones de gran volumen.</p>
           ) : (
             <table className={styles.table}>
               <thead>
@@ -253,7 +486,7 @@ export const Dashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {records.slice(0, 5).map(record => (
+                {filteredRecords.slice(0, 5).map(record => (
                   <tr key={record.id} className={styles.row}>
                     <td className={styles.cellMono}>{record.operation_date}</td>
                     <td className={styles.cellBold}>{record.clients?.name || 'Entidad Desconocida'}</td>

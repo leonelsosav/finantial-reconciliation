@@ -1,5 +1,8 @@
+import { useState, useEffect, useRef } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { useDatabase } from '../hooks/useDatabase';
+import type { InternalCompany, BankTransaction } from '../types';
 import { 
   LogOut, 
   LayoutDashboard, 
@@ -9,7 +12,6 @@ import {
   Search, 
   Bell, 
   HelpCircle, 
-  ChevronDown, 
   Building2, 
   User, 
   Plus 
@@ -17,12 +19,52 @@ import {
 import styles from './MainLayout.module.scss';
 
 export const MainLayout = () => {
-  const { profile, signOut } = useAuth();
+  const { profile, signOut, selectedCompanyId, setSelectedCompanyId } = useAuth();
   const navigate = useNavigate();
+
+  const { data: companies, fetchData: fetchCompanies } = useDatabase<InternalCompany>('internal_companies');
+  const { data: anomalies, fetchData: fetchAnomalies } = useDatabase<BankTransaction>('bank_transactions');
+
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetchCompanies();
+  }, [fetchCompanies]);
+
+  useEffect(() => {
+    const filters: any[] = [{ column: 'is_reconciled', operator: 'eq', value: false }];
+    if (selectedCompanyId) {
+      filters.push({ column: 'internal_company_id', operator: 'eq', value: selectedCompanyId });
+    }
+    fetchAnomalies({
+      filters,
+      limit: 25,
+      sort: { column: 'transaction_date', direction: 'desc' }
+    });
+  }, [selectedCompanyId, fetchAnomalies]);
+
+  // Close notifications popover on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(event.target as Node)) {
+        setShowNotifications(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleSignOut = async () => {
     await signOut();
     navigate('/login');
+  };
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && searchQuery.trim()) {
+      navigate(`/ledger?search=${encodeURIComponent(searchQuery.trim())}`);
+    }
   };
 
   const getInitials = (name: string | null | undefined) => {
@@ -91,7 +133,7 @@ export const MainLayout = () => {
 
         <div className={styles.sidebarFooter}>
           <button 
-            onClick={() => navigate('/reconciliation')} 
+            onClick={() => navigate('/reconciliation', { state: { triggerUpload: true } })} 
             className={styles.newReconBtn}
           >
             <Plus size={16} />
@@ -118,10 +160,21 @@ export const MainLayout = () => {
             <div className={styles.entitySelector}>
               <Building2 size={16} className={styles.entityIcon} />
               <span className={styles.entityLabel}>Selector de Entidad:</span>
-              <span className={styles.entityValue}>
-                {profile?.role === 'owner' ? 'Todas las Entidades (17)' : 'Entidad Activa'}
-              </span>
-              <ChevronDown size={14} className={styles.chevron} />
+              <select
+                value={selectedCompanyId}
+                onChange={(e) => setSelectedCompanyId(e.target.value)}
+                disabled={profile?.role !== 'owner'}
+                className={styles.entitySelectDropdown}
+              >
+                {profile?.role === 'owner' && (
+                  <option value="">Todas las Entidades</option>
+                )}
+                {companies.map(company => (
+                  <option key={company.id} value={company.id}>
+                    {company.name}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className={styles.divider}></div>
             <div className={styles.searchBar}>
@@ -130,15 +183,55 @@ export const MainLayout = () => {
                 type="text" 
                 placeholder="Buscar transacciones, entidades..." 
                 className={styles.searchInput}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
               />
             </div>
           </div>
 
           <div className={styles.headerRight}>
-            <button className={styles.headerBtn}>
-              <Bell size={18} />
-              <span className={styles.notificationDot}></span>
-            </button>
+            <div className={styles.notificationWrapper} ref={popoverRef}>
+              <button 
+                className={`${styles.headerBtn} ${showNotifications ? styles.btnActive : ''}`}
+                onClick={() => setShowNotifications(!showNotifications)}
+              >
+                <Bell size={18} />
+                {anomalies.length > 0 && <span className={styles.notificationDot}></span>}
+              </button>
+              
+              {showNotifications && (
+                <div className={styles.notificationsPopover}>
+                  <div className={styles.popoverHeader}>
+                    <h4>Anomalías sin Conciliar ({anomalies.length})</h4>
+                  </div>
+                  <div className={styles.popoverContent}>
+                    {anomalies.length === 0 ? (
+                      <p className={styles.emptyNotification}>No hay anomalías pendientes.</p>
+                    ) : (
+                      anomalies.map(anomaly => (
+                        <div 
+                          key={anomaly.id} 
+                          className={styles.notificationItem}
+                          onClick={() => {
+                            setShowNotifications(false);
+                            navigate('/reconciliation', { state: { selectedBankTxId: anomaly.id } });
+                          }}
+                        >
+                          <div className={styles.notificationMeta}>
+                            <span className={styles.notificationDate}>{anomaly.transaction_date}</span>
+                            <span className={styles.notificationAmount}>
+                              {new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(anomaly.amount)}
+                            </span>
+                          </div>
+                          <p className={styles.notificationDesc}>{anomaly.description || 'Transacción Bancaria'}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
             <button className={styles.headerBtn}>
               <HelpCircle size={18} />
             </button>

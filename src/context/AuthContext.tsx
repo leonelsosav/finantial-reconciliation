@@ -6,6 +6,8 @@ import type { AuthState } from '../types/auth';
 
 interface AuthContextType extends AuthState {
   signOut: () => Promise<void>;
+  selectedCompanyId: string;
+  setSelectedCompanyId: (id: string) => void;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -17,6 +19,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     loading: true,
     error: null,
   });
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
 
   useEffect(() => {
     // Initial session check
@@ -26,8 +29,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (session?.user) {
           const profile = await AuthService.getCurrentProfile();
           setState({ user: session.user, profile, loading: false, error: null });
+          if (profile) {
+            setSelectedCompanyId(profile.role === 'owner' ? '' : (profile.internal_company_id || ''));
+          }
         } else {
           setState({ user: null, profile: null, loading: false, error: null });
+          setSelectedCompanyId('');
         }
       } catch (error: any) {
         setState({ user: null, profile: null, loading: false, error: error.message });
@@ -41,8 +48,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (session?.user) {
         const profile = await AuthService.getCurrentProfile();
         setState({ user: session.user, profile, loading: false, error: null });
+        if (profile) {
+          setSelectedCompanyId(profile.role === 'owner' ? '' : (profile.internal_company_id || ''));
+        }
       } else {
         setState({ user: null, profile: null, loading: false, error: null });
+        setSelectedCompanyId('');
       }
     });
 
@@ -60,7 +71,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ ...state, signOut }}>
+    <AuthContext.Provider value={{ ...state, signOut, selectedCompanyId, setSelectedCompanyId }}>
       {!state.loading && children}
     </AuthContext.Provider>
   );

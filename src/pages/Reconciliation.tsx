@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useDatabase } from '../hooks/useDatabase';
 import type { BankTransaction, StaffRecord, InternalCompany } from '../types';
@@ -18,13 +19,18 @@ import styles from './Reconciliation.module.scss';
 
 export const Reconciliation = () => {
   const { profile } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const { data: companies, fetchData: fetchCompanies } = useDatabase<InternalCompany>('internal_companies');
   
   const { 
     data: bankTxs, 
     loading: loadingBank, 
     fetchData: fetchBank,
-    updateRecord: updateBank 
+    updateRecord: updateBank,
+    service: bankService
   } = useDatabase<BankTransaction>('bank_transactions');
   
   const { 
@@ -38,6 +44,7 @@ export const Reconciliation = () => {
   const [selectedBankTx, setSelectedBankTx] = useState<BankTransaction | null>(null);
   const [selectedStaffRecord, setSelectedStaffRecord] = useState<StaffRecord | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [pendingBankTxId, setPendingBankTxId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchCompanies();
@@ -45,6 +52,40 @@ export const Reconciliation = () => {
       setSelectedCompany(profile.internal_company_id);
     }
   }, [profile, fetchCompanies]);
+
+  useEffect(() => {
+    if (location.state?.triggerUpload && fileInputRef.current) {
+      fileInputRef.current.click();
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state?.triggerUpload, navigate, location.pathname]);
+
+  useEffect(() => {
+    const txId = location.state?.selectedBankTxId;
+    if (txId) {
+      setPendingBankTxId(txId);
+      
+      bankService.getById(txId).then(tx => {
+        if (tx && tx.internal_company_id) {
+          setSelectedCompany(tx.internal_company_id);
+        }
+      }).catch(err => {
+        console.error('Error fetching bank tx:', err);
+      });
+      
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state?.selectedBankTxId, bankService, navigate, location.pathname]);
+
+  useEffect(() => {
+    if (pendingBankTxId && bankTxs.length > 0) {
+      const found = bankTxs.find(tx => tx.id === pendingBankTxId);
+      if (found) {
+        setSelectedBankTx(found);
+        setPendingBankTxId(null);
+      }
+    }
+  }, [bankTxs, pendingBankTxId]);
 
   useEffect(() => {
     if (selectedCompany) {
@@ -194,7 +235,17 @@ export const Reconciliation = () => {
               <span className={styles.batchLabel}>Lote Activo</span>
               <span className={styles.batchValue}>Q3_Chase_Sept_2023.pdf</span>
             </div>
-            <button className={styles.browseBtn}>Buscar archivos</button>
+            <button className={styles.browseBtn} onClick={() => fileInputRef.current?.click()}>Buscar archivos</button>
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              className={styles.hiddenInput} 
+              onChange={(e) => {
+                if (e.target.files && e.target.files.length > 0) {
+                  alert(`Archivo seleccionado: ${e.target.files[0].name}`);
+                }
+              }}
+            />
           </div>
         </div>
 
