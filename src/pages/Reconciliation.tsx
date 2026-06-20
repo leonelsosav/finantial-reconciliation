@@ -1,9 +1,19 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useDatabase } from '../hooks/useDatabase';
-import { Card } from '../components/Card';
 import type { BankTransaction, StaffRecord, InternalCompany } from '../types';
-import { ArrowLeftRight, CheckCircle2, Info } from 'lucide-react';
+import { 
+  ArrowRight, 
+  CheckCircle2, 
+  AlertTriangle, 
+  Info, 
+  UploadCloud, 
+  Sparkles,
+  Building2,
+  Circle,
+  FileText,
+  Filter
+} from 'lucide-react';
 import styles from './Reconciliation.module.scss';
 
 export const Reconciliation = () => {
@@ -139,132 +149,258 @@ export const Reconciliation = () => {
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('es-MX', {
+    return new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: 'MXN',
+      currency: 'USD',
     }).format(Math.abs(amount));
   };
 
+  const getInitials = (name: string | null | undefined) => {
+    if (!name) return 'U';
+    return name
+      .split(' ')
+      .map(n => n[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase();
+  };
+
+  // Determine match bar state
+  const isMatchPerfect = selectedBankTx && selectedStaffRecord && 
+    Math.abs(Number(selectedBankTx.amount)) === Math.abs(Number(selectedStaffRecord.amount));
+
+  const selectedValue = selectedBankTx 
+    ? Math.abs(Number(selectedBankTx.amount)) 
+    : selectedStaffRecord 
+    ? Math.abs(Number(selectedStaffRecord.amount)) 
+    : 0;
+
   return (
     <div className={styles.container}>
-      <header className={styles.header}>
-        <div className={styles.titleGroup}>
-          <h1>Conciliación Bancaria</h1>
-          <p>Cruce de transacciones bancarias contra registros operativos</p>
+      {/* Control Panel Section */}
+      <section className={styles.controlPanel}>
+        <div className={styles.dropZone}>
+          <div className={styles.dropZoneLeft}>
+            <div className={styles.uploadIcon}>
+              <UploadCloud size={24} />
+            </div>
+            <div>
+              <h3 className={styles.dropZoneTitle}>Drag & Drop Bank Statements</h3>
+              <p className={styles.dropZoneSub}>PDF or CSV formats accepted. System parses text via OCR automatically.</p>
+            </div>
+          </div>
+          <div className={styles.dropZoneRight}>
+            <div className={styles.activeBatch}>
+              <span className={styles.batchLabel}>Active Batch</span>
+              <span className={styles.batchValue}>Q3_Chase_Sept_2023.pdf</span>
+            </div>
+            <button className={styles.browseBtn}>Browse Files</button>
+          </div>
         </div>
-        <div className={styles.headerActions}>
+
+        <div className={styles.controlsRight}>
+          <div className={styles.entityInputGroup}>
+            <label className={styles.entityLabel}>Internal Entity</label>
+            <select 
+              value={selectedCompany} 
+              onChange={(e) => setSelectedCompany(e.target.value)}
+              className={styles.companySelect}
+            >
+              <option value="">Select Enterprise...</option>
+              {companies.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
           <button 
             className={styles.autoMatchBtn} 
             onClick={handleAutoMatch}
             disabled={isProcessing || bankTxs.length === 0}
           >
-            <CheckCircle2 size={18} />
-            <span>Auto-Conciliar</span>
+            <Sparkles size={16} />
+            <span>Execute Auto-Match</span>
           </button>
-          <select 
-            value={selectedCompany} 
-            onChange={(e) => setSelectedCompany(e.target.value)}
-            className={styles.companySelect}
+        </div>
+      </section>
+
+      {/* Split-Pane Comparison Ledger */}
+      <section className={styles.splitPane}>
+        {/* Left Column: Bank Transactions */}
+        <div className={styles.paneColumn}>
+          <div className={styles.columnHeader}>
+            <div className={styles.titleWithIcon}>
+              <Building2 size={16} className={styles.columnTitleIcon} />
+              <h2 className={styles.columnTitle}>Unreconciled Bank Transactions</h2>
+            </div>
+            <span className={`${styles.badge} ${styles.badgePrimary}`}>
+              {bankTxs.length} Pending
+            </span>
+          </div>
+
+          <div className={styles.listContainer}>
+            {loadingBank ? (
+              <p className={styles.infoText}>Loading transactions...</p>
+            ) : bankTxs.length === 0 ? (
+              <p className={styles.infoText}>No pending bank transactions.</p>
+            ) : (
+              bankTxs.map(tx => {
+                const isSelected = selectedBankTx?.id === tx.id;
+                return (
+                  <div 
+                    key={tx.id} 
+                    className={`${styles.itemCard} ${isSelected ? styles.itemSelected : ''}`}
+                    onClick={() => setSelectedBankTx(tx)}
+                  >
+                    <div className={styles.itemHeader}>
+                      {isSelected ? (
+                        <CheckCircle2 size={18} className={styles.checkedIcon} />
+                      ) : (
+                        <Circle size={18} className={styles.uncheckedIcon} />
+                      )}
+                      <div>
+                        <span className={styles.itemDate}>{tx.transaction_date}</span>
+                        <h4 className={`${styles.itemName} ${isSelected ? styles.textActive : ''}`}>
+                          {tx.description || 'Bank Transaction'}
+                        </h4>
+                      </div>
+                    </div>
+                    <div className={styles.itemRight}>
+                      <span className={`${styles.amount} ${tx.amount < 0 ? styles.negative : styles.positive}`}>
+                        {tx.amount < 0 ? '-' : '+'}{formatCurrency(tx.amount)}
+                      </span>
+                      {!tx.is_non_invoiced && (
+                        <button 
+                          className={styles.miniActionBtn}
+                          onClick={(e) => { e.stopPropagation(); markAsNonInvoiced(tx); }}
+                          title="Mark as Non-Invoiced"
+                        >
+                          <Info size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Right Column: Staff Records */}
+        <div className={styles.paneColumn}>
+          <div className={styles.columnHeader}>
+            <div className={styles.titleWithIcon}>
+              <FileText size={16} className={styles.columnTitleIcon} />
+              <h2 className={styles.columnTitle}>Unlinked Staff Records</h2>
+            </div>
+            <span className={`${styles.badge} ${styles.badgeSuccess}`}>
+              {staffRecords.length} Records
+            </span>
+          </div>
+
+          <div className={styles.listContainer}>
+            <div className={styles.filterMeta}>
+              <Filter size={12} className={styles.filterIcon} />
+              <span>FILTERED BY OPERATIONS IN ACTIVE ENTITY</span>
+            </div>
+
+            {loadingStaff ? (
+              <p className={styles.infoText}>Loading staff records...</p>
+            ) : staffRecords.length === 0 ? (
+              <p className={styles.infoText}>No pending staff records.</p>
+            ) : (
+              staffRecords.map(record => {
+                const isSelected = selectedStaffRecord?.id === record.id;
+                return (
+                  <div 
+                    key={record.id} 
+                    className={`${styles.itemCard} ${isSelected ? styles.itemSelected : ''}`}
+                    onClick={() => setSelectedStaffRecord(record)}
+                  >
+                    <div className={styles.itemHeader}>
+                      <div className={`${styles.initialsAvatar} ${isSelected ? styles.avatarActive : ''}`}>
+                        {getInitials(record.clients?.name)}
+                      </div>
+                      <div>
+                        <h4 className={`${styles.itemName} ${isSelected ? styles.textActive : ''}`}>
+                          {record.clients?.name || 'Unknown Client'}
+                        </h4>
+                        <span className={`${styles.typeTag} ${
+                          record.entry_type === 'payroll' 
+                            ? styles.tagPayroll 
+                            : record.entry_type === 'funding' 
+                            ? styles.tagFunding 
+                            : styles.tagFee
+                        }`}>
+                          {record.entry_type === 'payroll' 
+                            ? 'payroll_funding' 
+                            : record.entry_type === 'funding' 
+                            ? 'retainer_injection' 
+                            : 'fee_charge'}
+                        </span>
+                      </div>
+                    </div>
+                    <span className={`${styles.amount} ${isSelected ? styles.textActive : ''}`}>
+                      {formatCurrency(record.amount)}
+                    </span>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* Floating Bottom Action Bar */}
+      <section className={styles.floatingActionBar}>
+        <div className={styles.actionLeft}>
+          <div className={styles.valSummary}>
+            <span className={styles.valLabel}>Selected Matching Value</span>
+            <span className={styles.valAmount}>{formatCurrency(selectedValue)}</span>
+          </div>
+          <div className={styles.verticalDivider}></div>
+          <div className={styles.matchStatus}>
+            {selectedBankTx && selectedStaffRecord ? (
+              isMatchPerfect ? (
+                <div className={styles.statusSuccess}>
+                  <CheckCircle2 size={16} />
+                  <span>Perfect Match Detected</span>
+                </div>
+              ) : (
+                <div className={styles.statusWarning}>
+                  <AlertTriangle size={16} />
+                  <span>Amount Mismatch</span>
+                </div>
+              )
+            ) : (
+              <div className={styles.statusInfo}>
+                <Info size={16} />
+                <span>Awaiting Selection Pair</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className={styles.actionRight}>
+          <button 
+            className={styles.discardBtn}
+            onClick={() => {
+              setSelectedBankTx(null);
+              setSelectedStaffRecord(null);
+            }}
+            disabled={!selectedBankTx && !selectedStaffRecord}
           >
-            <option value="">Seleccionar Empresa...</option>
-            {companies.map(c => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
+            Discard Draft
+          </button>
+          <button 
+            className={styles.commitBtn}
+            onClick={handleMatch}
+            disabled={!selectedBankTx || !selectedStaffRecord || isProcessing}
+          >
+            <span>{isProcessing ? 'Processing...' : 'Commit Pair'}</span>
+            <ArrowRight size={14} />
+          </button>
         </div>
-      </header>
-
-      <div className={styles.matchingBar}>
-        <div className={styles.matchSlot}>
-          <span className={styles.slotLabel}>Banco:</span>
-          {selectedBankTx ? (
-            <div className={styles.slotValue}>
-              <strong>{formatCurrency(selectedBankTx.amount)}</strong>
-              <span>{selectedBankTx.transaction_date}</span>
-            </div>
-          ) : <span className={styles.slotPlaceholder}>Seleccione una transacción</span>}
-        </div>
-        
-        <ArrowLeftRight className={styles.matchIcon} size={24} />
-
-        <div className={styles.matchSlot}>
-          <span className={styles.slotLabel}>Sistema:</span>
-          {selectedStaffRecord ? (
-            <div className={styles.slotValue}>
-              <strong>{formatCurrency(selectedStaffRecord.amount)}</strong>
-              <span>{selectedStaffRecord.clients?.name}</span>
-            </div>
-          ) : <span className={styles.slotPlaceholder}>Seleccione un registro</span>}
-        </div>
-
-        <button 
-          className={styles.matchBtn}
-          disabled={!selectedBankTx || !selectedStaffRecord || isProcessing}
-          onClick={handleMatch}
-        >
-          {isProcessing ? 'Procesando...' : 'Vincular Registros'}
-        </button>
-      </div>
-
-      <div className={styles.columns}>
-        <Card title="Transacciones de Banco (Pendientes)" className={styles.column}>
-          <div className={styles.list}>
-            {loadingBank ? <p className={styles.infoText}>Cargando...</p> : 
-             bankTxs.length === 0 ? <p className={styles.infoText}>Sin pendientes bancarios.</p> :
-             bankTxs.map(tx => (
-              <div 
-                key={tx.id} 
-                className={`${styles.item} ${selectedBankTx?.id === tx.id ? styles.selected : ''}`}
-                onClick={() => setSelectedBankTx(tx)}
-              >
-                <div className={styles.itemMain}>
-                  <p className={styles.itemDate}>{tx.transaction_date}</p>
-                  <p className={styles.itemDesc}>{tx.description}</p>
-                </div>
-                <div className={styles.itemSide}>
-                  <p className={`${styles.itemAmount} ${tx.amount < 0 ? styles.negative : styles.positive}`}>
-                    {formatCurrency(tx.amount)}
-                  </p>
-                  {!tx.is_non_invoiced && (
-                    <button 
-                      className={styles.miniAction} 
-                      onClick={(e) => { e.stopPropagation(); markAsNonInvoiced(tx); }}
-                      title="Marcar como No Facturado"
-                    >
-                      <Info size={14} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-
-        <Card title="Registros de Sistema (Pendientes)" className={styles.column}>
-          <div className={styles.list}>
-            {loadingStaff ? <p className={styles.infoText}>Cargando...</p> : 
-             staffRecords.length === 0 ? <p className={styles.infoText}>Sin pendientes operativos.</p> :
-             staffRecords.map(record => (
-              <div 
-                key={record.id} 
-                className={`${styles.item} ${selectedStaffRecord?.id === record.id ? styles.selected : ''}`}
-                onClick={() => setSelectedStaffRecord(record)}
-              >
-                <div className={styles.itemMain}>
-                  <p className={styles.itemDate}>{record.operation_date}</p>
-                  <p className={styles.itemDesc}>{record.clients?.name}</p>
-                  <span className={styles.itemSub}>{record.description || record.entry_type}</span>
-                </div>
-                <div className={styles.itemSide}>
-                  <p className={`${styles.itemAmount} ${record.entry_type === 'payroll' ? styles.negative : styles.positive}`}>
-                    {formatCurrency(record.amount)}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
+      </section>
     </div>
   );
 };
