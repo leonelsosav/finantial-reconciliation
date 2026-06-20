@@ -3,7 +3,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useDatabase } from '../hooks/useDatabase';
 import { Card } from '../components/Card';
 import type { BankTransaction, InternalCompany } from '../types';
-import { Upload, Download, Landmark, FileText, CheckCircle2, XCircle } from 'lucide-react';
+import { Upload, CheckCircle2, XCircle } from 'lucide-react';
 import styles from './BankManagement.module.scss';
 
 export const BankManagement = () => {
