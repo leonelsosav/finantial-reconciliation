@@ -145,9 +145,9 @@ export const BankManagement = () => {
             setTimeout(async () => {
               const mockTxs = [
                 {
-                  amount: 75000.00,
+                  amount: 250000.00,
                   transaction_date: new Date().toISOString().split('T')[0],
-                  description: 'FONDEO DE NOMINA RECIBIDO',
+                  description: 'FONDEO DE NOMINA RECIBIDO (OCR)',
                   reference_number: 'SPEI987162534',
                 },
                 {

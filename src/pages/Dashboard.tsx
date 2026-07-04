@@ -2,7 +2,8 @@ import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useDatabase } from '../hooks/useDatabase';
-import type { StaffRecord, BankTransaction, Client } from '../types';
+import { supabase } from '../lib/supabase';
+import type { StaffRecord, BankTransaction, Client, InternalCompany } from '../types';
 import { 
   TrendingUp, 
   Wallet, 
@@ -21,6 +22,7 @@ export const Dashboard = () => {
   const { data: records, loading: loadingRecords, fetchData: fetchRecords } = useDatabase<StaffRecord>('staff_records');
   const { data: bankTxs, loading: loadingTxs, fetchData: fetchTxs } = useDatabase<BankTransaction>('bank_transactions');
   const { data: clients, loading: loadingClients, fetchData: fetchClients } = useDatabase<Client>('clients');
+  const { data: companies, fetchData: fetchCompanies } = useDatabase<InternalCompany>('internal_companies');
 
   const [timeframe, setTimeframe] = useState<'30days' | '7days' | '90days' | 'currentMonth'>('30days');
   const [statusFilter, setStatusFilter] = useState<'all' | 'reconciled' | 'pending'>('all');
@@ -56,6 +58,184 @@ export const Dashboard = () => {
     }
     fetchClients(options);
   }, [selectedCompanyId, fetchClients]);
+
+  useEffect(() => {
+    fetchCompanies();
+  }, [fetchCompanies]);
+
+  const activeCompanyName = useMemo(() => {
+    if (!selectedCompanyId) return 'Todas las Entidades';
+    const found = companies.find(c => c.id === selectedCompanyId);
+    return found ? found.name : 'Cargando...';
+  }, [companies, selectedCompanyId]);
+
+  const handleResetDemoData = async () => {
+    if (!window.confirm('¿Está seguro de que desea restablecer los datos de demostración? Esto eliminará todas las transacciones bancarias y registros del libro diario.')) {
+      return;
+    }
+    try {
+      const { error: error1 } = await supabase.from('bank_transactions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      if (error1) throw error1;
+
+      const { error: error2 } = await supabase.from('staff_records').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      if (error2) throw error2;
+
+      alert('Datos de demostración restablecidos con éxito.');
+      window.location.reload();
+    } catch (err: any) {
+      console.error('Error resetting demo data:', err);
+      alert('Error al restablecer datos: ' + err.message);
+    }
+  };
+
+  const handleLoadDemoData = async () => {
+    if (companies.length === 0 || clients.length === 0) {
+      alert('Cargando entidades y clientes. Por favor intente de nuevo en un segundo.');
+      return;
+    }
+
+    try {
+      // Clean existing
+      await supabase.from('bank_transactions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('staff_records').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+
+      const today = new Date();
+      const formatOffsetDate = (offsetDays: number) => {
+        const d = new Date(today);
+        d.setDate(today.getDate() - offsetDays);
+        return d.toISOString().split('T')[0];
+      };
+
+      const demoRecords = [];
+      const demoBankTxs = [];
+
+      const targetClients = clients.slice(0, 3);
+      if (targetClients.length === 0) {
+        alert('No se encontraron clientes para cargar datos de prueba.');
+        return;
+      }
+
+      for (let i = 0; i < targetClients.length; i++) {
+        const client = targetClients[i];
+        const companyId = client.internal_company_id;
+
+        // Pair 1: Reconciled Funding
+        const txId1 = crypto.randomUUID();
+        const recordId1 = crypto.randomUUID();
+        demoBankTxs.push({
+          id: txId1,
+          internal_company_id: companyId,
+          amount: 500000.00,
+          transaction_date: formatOffsetDate(10),
+          description: `FONDEO RECIBIDO CLIENTE ${client.name.toUpperCase()}`,
+          reference_number: `SPEI0092837${i}1`,
+          is_reconciled: true,
+          is_non_invoiced: false
+        });
+        demoRecords.push({
+          id: recordId1,
+          client_id: client.id,
+          internal_company_id: companyId,
+          amount: 500000.00,
+          entry_type: 'funding',
+          description: `Fondeo de reserva mensual - Factura F-99${i}`,
+          operation_date: formatOffsetDate(10),
+          created_by: profile?.id || '00000000-0000-0000-0000-000000000000',
+          is_reconciled: true,
+          bank_transaction_id: txId1
+        });
+
+        // Pair 2: Reconciled Payroll
+        const txId2 = crypto.randomUUID();
+        const recordId2 = crypto.randomUUID();
+        demoBankTxs.push({
+          id: txId2,
+          internal_company_id: companyId,
+          amount: -125000.00,
+          transaction_date: formatOffsetDate(5),
+          description: `DISPERSION MASIVA NOMINA CLIENTE ${i}`,
+          reference_number: `TEF998811${i}2`,
+          is_reconciled: true,
+          is_non_invoiced: false
+        });
+        demoRecords.push({
+          id: recordId2,
+          client_id: client.id,
+          internal_company_id: companyId,
+          amount: -125000.00,
+          entry_type: 'payroll',
+          description: `Dispersión Quincenal Colaboradores`,
+          operation_date: formatOffsetDate(5),
+          created_by: profile?.id || '00000000-0000-0000-0000-000000000000',
+          is_reconciled: true,
+          bank_transaction_id: txId2
+        });
+
+        // Pair 3: Reconciled Commission
+        const txId3 = crypto.randomUUID();
+        const recordId3 = crypto.randomUUID();
+        demoBankTxs.push({
+          id: txId3,
+          internal_company_id: companyId,
+          amount: -15000.00,
+          transaction_date: formatOffsetDate(5),
+          description: `COMISION POR DISPERSION CLIENTE ${i}`,
+          reference_number: `FEE001928${i}3`,
+          is_reconciled: true,
+          is_non_invoiced: false
+        });
+        demoRecords.push({
+          id: recordId3,
+          client_id: client.id,
+          internal_company_id: companyId,
+          amount: 15000.00,
+          entry_type: 'fee',
+          description: `Comisión por servicio de dispersión quincenal`,
+          operation_date: formatOffsetDate(5),
+          created_by: profile?.id || '00000000-0000-0000-0000-000000000000',
+          is_reconciled: true,
+          bank_transaction_id: txId3
+        });
+
+        // Pair 4: Unreconciled / Pending entries (Anomalies)
+        demoBankTxs.push({
+          id: crypto.randomUUID(),
+          internal_company_id: companyId,
+          amount: -8500.00,
+          transaction_date: formatOffsetDate(2),
+          description: `COMISION BANCARIA ANUAL BANORTE`,
+          reference_number: `CARGO0192837${i}`,
+          is_reconciled: false,
+          is_non_invoiced: false
+        });
+
+        demoRecords.push({
+          id: crypto.randomUUID(),
+          client_id: client.id,
+          internal_company_id: companyId,
+          amount: -45000.00,
+          entry_type: 'payroll',
+          description: `Reembolso de gastos extraordinarios aprobados`,
+          operation_date: formatOffsetDate(1),
+          created_by: profile?.id || '00000000-0000-0000-0000-000000000000',
+          is_reconciled: false,
+          bank_transaction_id: null
+        });
+      }
+
+      const { error: insertError1 } = await supabase.from('bank_transactions').insert(demoBankTxs);
+      if (insertError1) throw insertError1;
+
+      const { error: insertError2 } = await supabase.from('staff_records').insert(demoRecords);
+      if (insertError2) throw insertError2;
+
+      alert('Datos de simulación operativa cargados con éxito.');
+      window.location.reload();
+    } catch (err: any) {
+      console.error('Error loading demo data:', err);
+      alert('Error al cargar datos de demostración: ' + err.message);
+    }
+  };
 
   // Aggregated Metric Cards States
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
@@ -246,11 +426,26 @@ export const Dashboard = () => {
 
   return (
     <div className={styles.container}>
-      {/* Breadcrumbs */}
-      <div className={styles.breadcrumbs}>
-        <span>Inicio</span>
-        <span className={styles.separator}>/</span>
-        <span className={styles.activePage}>Panel Ejecutivo</span>
+      <div className={styles.header}>
+        <div className={styles.titleGroup}>
+          <div className={styles.breadcrumbs}>
+            <span>Inicio</span>
+            <span className={styles.separator}>/</span>
+            <span className={styles.activePage}>Panel Ejecutivo</span>
+          </div>
+          <h1 className={styles.pageTitle}>
+            Panel Ejecutivo de Conciliación
+            <span className={styles.entityBadge}>{activeCompanyName}</span>
+          </h1>
+        </div>
+        <div className={styles.headerActions}>
+          <button className={styles.loadBtn} onClick={handleLoadDemoData}>
+            Cargar Datos de Demo
+          </button>
+          <button className={styles.resetBtn} onClick={handleResetDemoData}>
+            Restablecer Demo
+          </button>
+        </div>
       </div>
 
       {/* Top Row: Metric Cards */}
