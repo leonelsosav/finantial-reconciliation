@@ -1,31 +1,40 @@
 import { useMemo } from 'react';
-import type { StaffRecord } from '../types';
+import type { BillingRecord, BankTransaction, Client } from '../types';
 
-export const useFinancials = (records: StaffRecord[]) => {
+export const useFinancials = (
+  billingRecords: BillingRecord[],
+  bankTransactions: BankTransaction[],
+  clients: Client[]
+) => {
   return useMemo(() => {
-    const totals = records.reduce(
-      (acc, record) => {
-        const amount = Number(record.amount);
-        
-        if (record.entry_type === 'fee') {
-          acc.netUtility += amount;
-          acc.totalInflow += amount;
-        } else if (record.entry_type === 'funding') {
-          acc.retainerBalance += amount;
-          acc.totalInflow += amount;
-        } else if (record.entry_type === 'payroll') {
-          acc.totalOutflow += amount;
-        }
-        
-        return acc;
-      },
-      { netUtility: 0, retainerBalance: 0, totalInflow: 0, totalOutflow: 0 }
+    // 1. Consolidated Treasury Balance: Accumulated true cash across bank transactions
+    const consolidatedTreasury = bankTransactions.reduce(
+      (sum, tx) => sum + Number(tx.amount),
+      0
     );
 
+    // 2. True Net Corporate Utility: Total revenue earned from commission percentages on reconciled billing records
+    const netUtility = billingRecords.reduce(
+      (sum, br) => br.is_reconciled ? sum + Number(br.amount_commission || 0) : sum,
+      0
+    );
+
+    // 3. Active Escrow Provisions: Total safety cushion cash held (sum of clients' retainer balances)
+    const activeEscrow = clients.reduce(
+      (sum, client) => sum + Number(client.retainer_balance || 0),
+      0
+    );
+
+    // Unreconciled counts for indicators
+    const unreconciledInvoicesCount = billingRecords.filter(br => !br.is_reconciled).length;
+    const unreconciledBankTxsCount = bankTransactions.filter(tx => !tx.is_reconciled).length;
+
     return {
-      ...totals,
-      totalCashFlow: totals.totalInflow - totals.totalOutflow,
-      unreconciledCount: records.filter(r => !r.is_reconciled).length
+      consolidatedTreasury,
+      netUtility,
+      activeEscrow,
+      unreconciledInvoicesCount,
+      unreconciledBankTxsCount
     };
-  }, [records]);
+  }, [billingRecords, bankTransactions, clients]);
 };
