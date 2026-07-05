@@ -7,11 +7,13 @@ export const useFinancials = (
   clients: Client[]
 ) => {
   return useMemo(() => {
-    // 1. Consolidated Treasury Balance: Accumulated true cash across bank transactions
-    const consolidatedTreasury = bankTransactions.reduce(
-      (sum, tx) => sum + Number(tx.amount),
-      0
-    );
+    // 1. Consolidated Treasury Balance: Accumulated true cash across bank transactions (excluding internal transfers)
+    const consolidatedTreasury = bankTransactions
+      .filter(tx => tx.transaction_category !== 'internal_transfer')
+      .reduce(
+        (sum, tx) => sum + Number(tx.amount),
+        0
+      );
 
     // 2. True Net Corporate Utility: Total revenue earned from commission percentages on reconciled billing records
     const netUtility = billingRecords.reduce(

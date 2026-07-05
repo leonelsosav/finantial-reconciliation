@@ -80,3 +80,10 @@ export interface BankTransaction {
   evidence_url: string | null;
 }
 
+export interface InternalCompany {
+  id: string;
+  name: string;
+  tax_id: string | null;
+  created_at: string;
+}
+

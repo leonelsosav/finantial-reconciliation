@@ -2,16 +2,21 @@ import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useDatabase } from '../hooks/useDatabase';
+import { useFinancials } from '../hooks/useFinancials';
 import { supabase } from '../lib/supabase';
-import type { StaffRecord, BankTransaction, Client, InternalCompany } from '../types';
+import { DateEngine } from '../utils/DateEngine';
+import type { BillingRecord, BankTransaction, Client, InternalCompany, ClientGroup } from '../types';
 import { 
   TrendingUp, 
   Wallet, 
   AlertTriangle, 
   ArrowRight, 
-  Filter, 
   Download,
-  Percent
+  Percent,
+  ChevronDown,
+  ChevronRight,
+  ShieldAlert,
+  X
 } from 'lucide-react';
 import styles from './Dashboard.module.scss';
 
@@ -19,252 +24,127 @@ export const Dashboard = () => {
   const { profile, selectedCompanyId } = useAuth();
   const navigate = useNavigate();
 
-  const { data: records, loading: loadingRecords, fetchData: fetchRecords } = useDatabase<StaffRecord>('staff_records');
+  // Redirect or block if not owner
+  const isOwner = profile?.role === 'owner';
+
+  // Supabase hooks
+  const { data: billingRecords, loading: loadingBilling, fetchData: fetchBilling } = useDatabase<BillingRecord>('billing_records');
   const { data: bankTxs, loading: loadingTxs, fetchData: fetchTxs } = useDatabase<BankTransaction>('bank_transactions');
   const { data: clients, loading: loadingClients, fetchData: fetchClients } = useDatabase<Client>('clients');
+  const { data: clientGroups, loading: loadingGroups, fetchData: fetchClientGroups } = useDatabase<ClientGroup>('client_groups');
   const { data: companies, fetchData: fetchCompanies } = useDatabase<InternalCompany>('internal_companies');
+  const { updateRecord } = useDatabase<Client>('clients');
 
   const [timeframe, setTimeframe] = useState<'30days' | '7days' | '90days' | 'currentMonth'>('30days');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'reconciled' | 'pending'>('all');
-  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  
+  // Drawer states for editing client provisions
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [editForm, setEditForm] = useState({
+    commercialName: '',
+    legalName: '',
+    commissionPercentage: 0,
+    retainerBalance: 0
+  });
 
-  const isLoading = loadingRecords || loadingTxs || loadingClients;
+  const isLoading = loadingBilling || loadingTxs || loadingClients || loadingGroups;
 
+  // Fetch initial data
   useEffect(() => {
-    const options: any = {
+    if (!isOwner) return;
+
+    const billingOptions: any = {
       select: '*, clients(name)',
       sort: { column: 'operation_date', direction: 'desc' }
     };
     if (selectedCompanyId) {
-      options.filters = [{ column: 'internal_company_id', operator: 'eq', value: selectedCompanyId }];
+      billingOptions.filters = [{ column: 'internal_company_id', operator: 'eq', value: selectedCompanyId }];
     }
-    fetchRecords(options);
-  }, [selectedCompanyId, fetchRecords]);
+    fetchBilling(billingOptions);
+  }, [selectedCompanyId, fetchBilling, isOwner]);
 
   useEffect(() => {
-    const options: any = {
+    if (!isOwner) return;
+
+    const txOptions: any = {
       sort: { column: 'transaction_date', direction: 'desc' }
     };
     if (selectedCompanyId) {
-      options.filters = [{ column: 'internal_company_id', operator: 'eq', value: selectedCompanyId }];
+      txOptions.filters = [{ column: 'internal_company_id', operator: 'eq', value: selectedCompanyId }];
     }
-    fetchTxs(options);
-  }, [selectedCompanyId, fetchTxs]);
+    fetchTxs(txOptions);
+  }, [selectedCompanyId, fetchTxs, isOwner]);
 
   useEffect(() => {
-    const options: any = {};
+    if (!isOwner) return;
+
+    const clientOptions: any = {};
     if (selectedCompanyId) {
-      options.filters = [{ column: 'internal_company_id', operator: 'eq', value: selectedCompanyId }];
+      clientOptions.filters = [{ column: 'internal_company_id', operator: 'eq', value: selectedCompanyId }];
     }
-    fetchClients(options);
-  }, [selectedCompanyId, fetchClients]);
+    fetchClients(clientOptions);
+  }, [selectedCompanyId, fetchClients, isOwner]);
 
   useEffect(() => {
+    if (!isOwner) return;
+    fetchClientGroups();
     fetchCompanies();
-  }, [fetchCompanies]);
+  }, [fetchClientGroups, fetchCompanies, isOwner]);
 
+  // active company label
   const activeCompanyName = useMemo(() => {
     if (!selectedCompanyId) return 'Todas las Entidades';
     const found = companies.find(c => c.id === selectedCompanyId);
     return found ? found.name : 'Cargando...';
   }, [companies, selectedCompanyId]);
 
-  const handleResetDemoData = async () => {
-    if (!window.confirm('¿Está seguro de que desea restablecer los datos de demostración? Esto eliminará todas las transacciones bancarias y registros del libro diario.')) {
-      return;
+  // Timeframe date boundary helper
+  const todayStr = useMemo(() => DateEngine.getLocalYYYYMMDD(new Date()), []);
+
+  // Filtered lists reactive to timeframe
+  const filteredBillingRecords = useMemo(() => {
+    const startDate = new Date();
+    if (timeframe === '7days') {
+      startDate.setDate(startDate.getDate() - 6);
+    } else if (timeframe === '30days') {
+      startDate.setDate(startDate.getDate() - 29);
+    } else if (timeframe === '90days') {
+      startDate.setDate(startDate.getDate() - 89);
+    } else if (timeframe === 'currentMonth') {
+      startDate.setDate(1);
     }
-    try {
-      const { error: error1 } = await supabase.from('bank_transactions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      if (error1) throw error1;
+    const startStr = DateEngine.getLocalYYYYMMDD(startDate);
+    return billingRecords.filter(r => r.operation_date >= startStr && r.operation_date <= todayStr);
+  }, [billingRecords, timeframe, todayStr]);
 
-      const { error: error2 } = await supabase.from('staff_records').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      if (error2) throw error2;
-
-      alert('Datos de demostración restablecidos con éxito.');
-      window.location.reload();
-    } catch (err: any) {
-      console.error('Error resetting demo data:', err);
-      alert('Error al restablecer datos: ' + err.message);
+  const filteredBankTxs = useMemo(() => {
+    const startDate = new Date();
+    if (timeframe === '7days') {
+      startDate.setDate(startDate.getDate() - 6);
+    } else if (timeframe === '30days') {
+      startDate.setDate(startDate.getDate() - 29);
+    } else if (timeframe === '90days') {
+      startDate.setDate(startDate.getDate() - 89);
+    } else if (timeframe === 'currentMonth') {
+      startDate.setDate(1);
     }
-  };
+    const startStr = DateEngine.getLocalYYYYMMDD(startDate);
+    return bankTxs.filter(tx => tx.transaction_date >= startStr && tx.transaction_date <= todayStr);
+  }, [bankTxs, timeframe, todayStr]);
 
-  const handleLoadDemoData = async () => {
-    if (companies.length === 0 || clients.length === 0) {
-      alert('Cargando entidades y clientes. Por favor intente de nuevo en un segundo.');
-      return;
-    }
+  // Aggregate stats using financials hook
+  const {
+    consolidatedTreasury,
+    netUtility,
+    activeEscrow,
+    unreconciledInvoicesCount,
+    unreconciledBankTxsCount
+  } = useFinancials(filteredBillingRecords, filteredBankTxs, clients);
 
-    try {
-      // Clean existing
-      await supabase.from('bank_transactions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('staff_records').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  const unreconciledCount = unreconciledInvoicesCount + unreconciledBankTxsCount;
 
-      const today = new Date();
-      const formatOffsetDate = (offsetDays: number) => {
-        const d = new Date(today);
-        d.setDate(today.getDate() - offsetDays);
-        return d.toISOString().split('T')[0];
-      };
-
-      const demoRecords = [];
-      const demoBankTxs = [];
-
-      const targetClients = clients.slice(0, 3);
-      if (targetClients.length === 0) {
-        alert('No se encontraron clientes para cargar datos de prueba.');
-        return;
-      }
-
-      for (let i = 0; i < targetClients.length; i++) {
-        const client = targetClients[i];
-        const companyId = client.internal_company_id;
-
-        // Pair 1: Reconciled Funding
-        const txId1 = crypto.randomUUID();
-        const recordId1 = crypto.randomUUID();
-        demoBankTxs.push({
-          id: txId1,
-          internal_company_id: companyId,
-          amount: 500000.00,
-          transaction_date: formatOffsetDate(10),
-          description: `FONDEO RECIBIDO CLIENTE ${client.name.toUpperCase()}`,
-          reference_number: `SPEI0092837${i}1`,
-          is_reconciled: true,
-          is_non_invoiced: false
-        });
-        demoRecords.push({
-          id: recordId1,
-          client_id: client.id,
-          internal_company_id: companyId,
-          amount: 500000.00,
-          entry_type: 'funding',
-          description: `Fondeo de reserva mensual - Factura F-99${i}`,
-          operation_date: formatOffsetDate(10),
-          created_by: profile?.id || '00000000-0000-0000-0000-000000000000',
-          is_reconciled: true,
-          bank_transaction_id: txId1
-        });
-
-        // Pair 2: Reconciled Payroll
-        const txId2 = crypto.randomUUID();
-        const recordId2 = crypto.randomUUID();
-        demoBankTxs.push({
-          id: txId2,
-          internal_company_id: companyId,
-          amount: -125000.00,
-          transaction_date: formatOffsetDate(5),
-          description: `DISPERSION MASIVA NOMINA CLIENTE ${i}`,
-          reference_number: `TEF998811${i}2`,
-          is_reconciled: true,
-          is_non_invoiced: false
-        });
-        demoRecords.push({
-          id: recordId2,
-          client_id: client.id,
-          internal_company_id: companyId,
-          amount: -125000.00,
-          entry_type: 'payroll',
-          description: `Dispersión Quincenal Colaboradores`,
-          operation_date: formatOffsetDate(5),
-          created_by: profile?.id || '00000000-0000-0000-0000-000000000000',
-          is_reconciled: true,
-          bank_transaction_id: txId2
-        });
-
-        // Pair 3: Reconciled Commission
-        const txId3 = crypto.randomUUID();
-        const recordId3 = crypto.randomUUID();
-        demoBankTxs.push({
-          id: txId3,
-          internal_company_id: companyId,
-          amount: -15000.00,
-          transaction_date: formatOffsetDate(5),
-          description: `COMISION POR DISPERSION CLIENTE ${i}`,
-          reference_number: `FEE001928${i}3`,
-          is_reconciled: true,
-          is_non_invoiced: false
-        });
-        demoRecords.push({
-          id: recordId3,
-          client_id: client.id,
-          internal_company_id: companyId,
-          amount: 15000.00,
-          entry_type: 'fee',
-          description: `Comisión por servicio de dispersión quincenal`,
-          operation_date: formatOffsetDate(5),
-          created_by: profile?.id || '00000000-0000-0000-0000-000000000000',
-          is_reconciled: true,
-          bank_transaction_id: txId3
-        });
-
-        // Pair 4: Unreconciled / Pending entries (Anomalies)
-        demoBankTxs.push({
-          id: crypto.randomUUID(),
-          internal_company_id: companyId,
-          amount: -8500.00,
-          transaction_date: formatOffsetDate(2),
-          description: `COMISION BANCARIA ANUAL BANORTE`,
-          reference_number: `CARGO0192837${i}`,
-          is_reconciled: false,
-          is_non_invoiced: false
-        });
-
-        demoRecords.push({
-          id: crypto.randomUUID(),
-          client_id: client.id,
-          internal_company_id: companyId,
-          amount: -45000.00,
-          entry_type: 'payroll',
-          description: `Reembolso de gastos extraordinarios aprobados`,
-          operation_date: formatOffsetDate(1),
-          created_by: profile?.id || '00000000-0000-0000-0000-000000000000',
-          is_reconciled: false,
-          bank_transaction_id: null
-        });
-      }
-
-      const { error: insertError1 } = await supabase.from('bank_transactions').insert(demoBankTxs);
-      if (insertError1) throw insertError1;
-
-      const { error: insertError2 } = await supabase.from('staff_records').insert(demoRecords);
-      if (insertError2) throw insertError2;
-
-      alert('Datos de simulación operativa cargados con éxito.');
-      window.location.reload();
-    } catch (err: any) {
-      console.error('Error loading demo data:', err);
-      alert('Error al cargar datos de demostración: ' + err.message);
-    }
-  };
-
-  // Aggregated Metric Cards States
-  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
-
-  const totalBankCashFlow = useMemo(() => {
-    return bankTxs
-      .filter(tx => tx.transaction_date <= todayStr)
-      .reduce((sum, tx) => sum + Number(tx.amount), 0);
-  }, [bankTxs, todayStr]);
-
-  const netUtility = useMemo(() => {
-    return records
-      .filter(r => r.entry_type === 'fee')
-      .reduce((sum, r) => sum + Number(r.amount), 0);
-  }, [records]);
-
-  const retainerBalance = useMemo(() => {
-    return records.reduce((sum, r) => {
-      if (r.entry_type === 'funding') return sum + Number(r.amount);
-      if (r.entry_type === 'payroll' || r.entry_type === 'fee') return sum - Number(r.amount);
-      return sum;
-    }, 0);
-  }, [records]);
-
-  const unreconciledCount = useMemo(() => {
-    return bankTxs.filter(tx => !tx.is_reconciled).length;
-  }, [bankTxs]);
-
-  // Generate chart data dynamically based on timeframe
+  // Chart timeline builder: Outflow vs Inflow (30D Timeline)
   const chartDays = useMemo(() => {
     const today = new Date();
     const grouped: Record<string, { inflow: number; outflow: number }> = {};
@@ -280,10 +160,15 @@ export const Dashboard = () => {
       startDate.setDate(1);
     }
     
-    const startDateStr = startDate.toISOString().split('T')[0];
-    const filteredTxs = bankTxs.filter(tx => tx.transaction_date >= startDateStr && tx.transaction_date <= todayStr);
+    const startDateStr = DateEngine.getLocalYYYYMMDD(startDate);
+    // Filter only client operation transactions
+    const clientOpsTxs = bankTxs.filter(tx => 
+      tx.transaction_category === 'client_operation' && 
+      tx.transaction_date >= startDateStr && 
+      tx.transaction_date <= todayStr
+    );
     
-    filteredTxs.forEach(tx => {
+    clientOpsTxs.forEach(tx => {
       const date = tx.transaction_date;
       if (!grouped[date]) {
         grouped[date] = { inflow: 0, outflow: 0 };
@@ -319,7 +204,7 @@ export const Dashboard = () => {
     for (let i = 0; i < daysToLoop; i += stepDays) {
       const dateObj = new Date(startDate);
       dateObj.setDate(startDate.getDate() + i);
-      const dateStr = dateObj.toISOString().split('T')[0];
+      const dateStr = DateEngine.getLocalYYYYMMDD(dateObj);
       
       let inflowSum = 0;
       let outflowSum = 0;
@@ -327,7 +212,7 @@ export const Dashboard = () => {
       for (let k = 0; k < stepDays; k++) {
         const subDate = new Date(dateObj);
         subDate.setDate(dateObj.getDate() + k);
-        const subDateStr = subDate.toISOString().split('T')[0];
+        const subDateStr = DateEngine.getLocalYYYYMMDD(subDate);
         const dataForDay = grouped[subDateStr];
         if (dataForDay) {
           inflowSum += dataForDay.inflow;
@@ -352,64 +237,220 @@ export const Dashboard = () => {
     }));
   }, [bankTxs, timeframe, todayStr]);
 
-  // Clients Retainer Health tracker
-  const retainerHealth = useMemo(() => {
-    const health = clients.map(client => {
-      const clientRecords = records.filter(r => r.client_id === client.id);
-      const funding = clientRecords.filter(r => r.entry_type === 'funding').reduce((sum, r) => sum + Number(r.amount), 0);
-      const payroll = clientRecords.filter(r => r.entry_type === 'payroll').reduce((sum, r) => sum + Number(r.amount), 0);
-      const fee = clientRecords.filter(r => r.entry_type === 'fee').reduce((sum, r) => sum + Number(r.amount), 0);
+  // Billing Matrix columns
+  const matrixColumns = useMemo(() => {
+    const companyCols = companies.map(comp => ({
+      id: comp.id,
+      header: comp.name.toUpperCase().replace(' S.A.', '').replace(' SERVICIOS', '').slice(0, 8),
+      isVirtual: false,
+      label: null
+    }));
+    
+    return [
+      ...companyCols,
+      { id: 'seivon', header: 'S.F. SEIVON', isVirtual: true, label: 'SEIVON' },
+      { id: 'quinto', header: 'S.F. QUINTO', isVirtual: true, label: 'QUINTO' }
+    ];
+  }, [companies]);
 
-      const cap = funding || 100000; 
-      const used = payroll + fee;
-      const pct = Math.min(Math.round((used / cap) * 100), 100);
+  // Interactive Invoicing & Billing Matrix calculations
+  const matrixData = useMemo(() => {
+    const groups = clientGroups.map(group => {
+      const groupClients = clients.filter(c => c.client_group_id === group.id);
       
-      let variant: 'primary' | 'success' | 'danger' | 'neutral' = 'neutral';
-      if (pct >= 90) variant = 'danger';
-      else if (pct >= 50) variant = 'primary';
-      else if (pct > 0) variant = 'success';
-
+      const clientsData = groupClients.map(client => {
+        const colValues: Record<string, number> = {};
+        let clientTotal = 0;
+        
+        matrixColumns.forEach(col => {
+          let val = 0;
+          if (!col.isVirtual) {
+            val = filteredBillingRecords
+              .filter(r => r.client_id === client.id && r.internal_company_id === col.id && r.is_invoiced)
+              .reduce((sum, r) => sum + Number(r.amount_gross || 0), 0);
+          } else {
+            val = filteredBillingRecords
+              .filter(r => r.client_id === client.id && !r.is_invoiced && r.virtual_bucket_label?.toUpperCase() === col.label)
+              .reduce((sum, r) => sum + Number(r.amount_gross || 0), 0);
+          }
+          colValues[col.id] = val;
+          clientTotal += val;
+        });
+        
+        return {
+          id: client.id,
+          name: client.name,
+          values: colValues,
+          total: clientTotal
+        };
+      });
+      
+      const groupValues: Record<string, number> = {};
+      let groupTotal = 0;
+      
+      matrixColumns.forEach(col => {
+        const sum = clientsData.reduce((acc, c) => acc + (c.values[col.id] || 0), 0);
+        groupValues[col.id] = sum;
+        groupTotal += sum;
+      });
+      
       return {
-        name: client.name,
-        pct,
-        cap: `${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', notation: 'compact' }).format(cap)} Límite`,
-        used: pct >= 90 ? 'Saldo Bajo' : `-${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', notation: 'compact' }).format(used)} Usado`,
-        variant
+        id: group.id,
+        name: group.group_name,
+        clients: clientsData,
+        values: groupValues,
+        total: groupTotal,
+        isGroup: true
       };
     });
+    
+    // Group clients with no parent group
+    const ungroupedClients = clients.filter(c => !c.client_group_id);
+    if (ungroupedClients.length > 0) {
+      const clientsData = ungroupedClients.map(client => {
+        const colValues: Record<string, number> = {};
+        let clientTotal = 0;
+        
+        matrixColumns.forEach(col => {
+          let val = 0;
+          if (!col.isVirtual) {
+            val = filteredBillingRecords
+              .filter(r => r.client_id === client.id && r.internal_company_id === col.id && r.is_invoiced)
+              .reduce((sum, r) => sum + Number(r.amount_gross || 0), 0);
+          } else {
+            val = filteredBillingRecords
+              .filter(r => r.client_id === client.id && !r.is_invoiced && r.virtual_bucket_label?.toUpperCase() === col.label)
+              .reduce((sum, r) => sum + Number(r.amount_gross || 0), 0);
+          }
+          colValues[col.id] = val;
+          clientTotal += val;
+        });
+        
+        return {
+          id: client.id,
+          name: client.name,
+          values: colValues,
+          total: clientTotal
+        };
+      });
+      
+      const groupValues: Record<string, number> = {};
+      let groupTotal = 0;
+      
+      matrixColumns.forEach(col => {
+        const sum = clientsData.reduce((acc, c) => acc + (c.values[col.id] || 0), 0);
+        groupValues[col.id] = sum;
+        groupTotal += sum;
+      });
+      
+      groups.push({
+        id: 'ungrouped',
+        name: 'Otros Clientes',
+        clients: clientsData,
+        values: groupValues,
+        total: groupTotal,
+        isGroup: true
+      });
+    }
+    
+    return groups;
+  }, [clientGroups, clients, matrixColumns, filteredBillingRecords]);
 
-    return health.sort((a, b) => b.pct - a.pct).slice(0, 4);
-  }, [clients, records]);
+  // Calculate DIFERENCIA delta row
+  const matrixTotals = useMemo(() => {
+    const totals: Record<string, { billed: number; cash: number; delta: number }> = {};
+    let grantTotalBilled = 0;
+    let grantTotalCash = 0;
 
-  // Filter & segment high-volume records (> $5,000)
-  const highVolumeRecords = useMemo(() => {
-    return records.filter(r => Math.abs(Number(r.amount)) >= 5000);
-  }, [records]);
+    matrixColumns.forEach(col => {
+      let billed = 0;
+      let cash = 0;
 
-  const filteredRecords = useMemo(() => {
-    return highVolumeRecords.filter(r => {
-      if (statusFilter === 'reconciled') return r.is_reconciled;
-      if (statusFilter === 'pending') return !r.is_reconciled;
-      return true;
+      if (!col.isVirtual) {
+        billed = filteredBillingRecords
+          .filter(r => r.internal_company_id === col.id && r.is_invoiced)
+          .reduce((sum, r) => sum + Number(r.amount_gross || 0), 0);
+        
+        cash = filteredBankTxs
+          .filter(tx => tx.internal_company_id === col.id && tx.transaction_category !== 'internal_transfer')
+          .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+      } else {
+        const recordsInCol = filteredBillingRecords
+          .filter(r => !r.is_invoiced && r.virtual_bucket_label?.toUpperCase() === col.label);
+        billed = recordsInCol.reduce((sum, r) => sum + Number(r.amount_gross || 0), 0);
+        
+        const matchedTxIds = recordsInCol.map(r => r.bank_transaction_id).filter(Boolean) as string[];
+        cash = filteredBankTxs
+          .filter(tx => matchedTxIds.includes(tx.id))
+          .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+      }
+
+      const delta = cash - billed;
+      totals[col.id] = { billed, cash, delta };
+      grantTotalBilled += billed;
+      grantTotalCash += cash;
     });
-  }, [highVolumeRecords, statusFilter]);
 
+    return {
+      columns: totals,
+      grantTotalBilled,
+      grantTotalCash,
+      grantTotalDelta: grantTotalCash - grantTotalBilled
+    };
+  }, [matrixColumns, filteredBillingRecords, filteredBankTxs]);
+
+  const toggleGroup = (groupId: string) => {
+    setCollapsedGroups(prev => ({
+      ...prev,
+      [groupId]: !prev[groupId]
+    }));
+  };
+
+  // Currency Formatter
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('es-MX', {
       style: 'currency',
-      currency: 'MXN',
+      currency: 'MXN'
     }).format(amount);
   };
 
-  const handleExportCSV = () => {
-    if (filteredRecords.length === 0) return;
-    const headers = ['Fecha', 'Entidad', 'Tipo', 'Estado', 'Monto'];
-    const rows = filteredRecords.map(r => [
-      r.operation_date,
-      r.clients?.name || 'Entidad Desconocida',
-      r.entry_type === 'funding' ? 'FONDEO_RETAINER' : r.entry_type === 'fee' ? 'AJUSTE_COMISION' : 'DISPERSION_NOMINA',
-      r.is_reconciled ? 'Conciliado' : 'Pendiente',
-      r.amount.toString()
+  // Matrix Exporter
+  const handleExportMatrixCSV = () => {
+    const headers = ['ENTITY', ...matrixColumns.map(col => col.header), 'TOTAL'];
+    const rows: string[][] = [];
+    
+    matrixData.forEach(group => {
+      rows.push([
+        group.name,
+        ...matrixColumns.map(col => (group.values[col.id] || 0).toString()),
+        group.total.toString()
+      ]);
+      
+      group.clients.forEach(client => {
+        rows.push([
+          `  ${client.name}`,
+          ...matrixColumns.map(col => (client.values[col.id] || 0).toString()),
+          client.total.toString()
+        ]);
+      });
+    });
+    
+    rows.push([
+      'TOTAL FACTURADO (INVOICED)',
+      ...matrixColumns.map(col => (matrixTotals.columns[col.id]?.billed || 0).toString()),
+      matrixTotals.grantTotalBilled.toString()
+    ]);
+
+    rows.push([
+      'FLUJO BANCARIO (CASH MOVEMENT)',
+      ...matrixColumns.map(col => (matrixTotals.columns[col.id]?.cash || 0).toString()),
+      matrixTotals.grantTotalCash.toString()
+    ]);
+    
+    rows.push([
+      'DIFERENCIA (DELTA)',
+      ...matrixColumns.map(col => (matrixTotals.columns[col.id]?.delta || 0).toString()),
+      matrixTotals.grantTotalDelta.toString()
     ]);
     
     const csvContent = "data:text/csv;charset=utf-8,\uFEFF" 
@@ -418,11 +459,295 @@ export const Dashboard = () => {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `Transacciones_Gran_Volumen_${profile?.full_name || 'Owner'}.csv`);
+    link.setAttribute("download", `Matriz_Facturacion_Ejecutiva_${DateEngine.getLocalYYYYMMDD(new Date())}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
+
+  // Edit Drawer handlers
+  const handleOpenDrawer = (client: Client) => {
+    setEditingClient(client);
+    setEditForm({
+      commercialName: client.commercial_name || '',
+      legalName: client.legal_name || '',
+      commissionPercentage: Number(client.commission_percentage || 0),
+      retainerBalance: Number(client.retainer_balance || 0)
+    });
+    setIsDrawerOpen(true);
+  };
+
+  const handleSaveClient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingClient) return;
+    
+    try {
+      await updateRecord(editingClient.id, {
+        commercial_name: editForm.commercialName,
+        legal_name: editForm.legalName,
+        commission_percentage: Number(editForm.commissionPercentage),
+        retainer_balance: Number(editForm.retainerBalance)
+      });
+      
+      // Reload clients
+      fetchClients();
+      setIsDrawerOpen(false);
+      alert('Perfil de cliente actualizado con éxito.');
+    } catch (err: any) {
+      console.error('Error updating client profile:', err);
+      alert('Error al guardar: ' + err.message);
+    }
+  };
+
+  // Demo data handlers
+  const handleResetDemoData = async () => {
+    if (!window.confirm('¿Está seguro de que desea restablecer los datos de demostración? Esto eliminará todos los registros y transacciones bancarias.')) {
+      return;
+    }
+    try {
+      await supabase.from('billing_records').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('bank_transactions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('client_groups').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+
+      alert('Datos de simulación borrados con éxito.');
+      window.location.reload();
+    } catch (err: any) {
+      console.error('Error resetting demo data:', err);
+      alert('Error al restablecer datos: ' + err.message);
+    }
+  };
+
+  const handleLoadDemoData = async () => {
+    if (companies.length === 0 || clients.length === 0) {
+      alert('Cargando entidades y clientes. Por favor intente de nuevo.');
+      return;
+    }
+
+    try {
+      await supabase.from('billing_records').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('bank_transactions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('client_groups').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+
+      const { data: grpData, error: grpError } = await supabase.from('client_groups').insert([
+        { group_name: 'Grupo Industrial' },
+        { group_name: 'Servicios Globales' },
+        { group_name: 'Consorcio Norte' }
+      ]).select();
+      if (grpError) throw grpError;
+
+      const gIndId = grpData.find(g => g.group_name === 'Grupo Industrial')?.id;
+      const gGlobId = grpData.find(g => g.group_name === 'Servicios Globales')?.id;
+      const gNortId = grpData.find(g => g.group_name === 'Consorcio Norte')?.id;
+
+      const clientA = clients[0];
+      const clientB = clients[1];
+      const clientC = clients[2];
+      const clientD = clients[3];
+      const clientE = clients[4];
+
+      if (clientA) await supabase.from('clients').update({ client_group_id: gIndId, retainer_balance: 1240500, commission_percentage: 5 }).eq('id', clientA.id);
+      if (clientB) await supabase.from('clients').update({ client_group_id: gIndId, retainer_balance: 450000, commission_percentage: 5 }).eq('id', clientB.id);
+      if (clientC) await supabase.from('clients').update({ client_group_id: gGlobId, retainer_balance: 8900000, commission_percentage: 6 }).eq('id', clientC.id);
+      if (clientD) await supabase.from('clients').update({ client_group_id: gGlobId, retainer_balance: 4120000, commission_percentage: 6 }).eq('id', clientD.id);
+      if (clientE) await supabase.from('clients').update({ client_group_id: gNortId, retainer_balance: 2530000, commission_percentage: 4 }).eq('id', clientE.id);
+
+      const formatOffsetDate = (offsetDays: number) => {
+        const d = new Date();
+        d.setDate(d.getDate() - offsetDays);
+        return DateEngine.getLocalYYYYMMDD(d);
+      };
+
+      const demoRecords = [];
+      const demoBankTxs = [];
+
+      const compAId = companies[0]?.id;
+      const compBId = companies[1]?.id;
+
+      if (clientA && compAId) {
+        const txId1 = crypto.randomUUID();
+        demoBankTxs.push({
+          id: txId1,
+          internal_company_id: compAId,
+          amount: 450000.00,
+          transaction_date: formatOffsetDate(10),
+          description: `DEPOSITO DE RESERVA NOMINA - ${clientA.name.toUpperCase()}`,
+          reference_number: 'SPEI0012921',
+          is_reconciled: true,
+          is_non_invoiced: false,
+          transaction_category: 'client_operation',
+          ingestion_source: 'daily_screenshot_assisted'
+        });
+        demoRecords.push({
+          id: crypto.randomUUID(),
+          client_id: clientA.id,
+          internal_company_id: compAId,
+          invoice_uuid: crypto.randomUUID(),
+          is_invoiced: true,
+          virtual_bucket_label: null,
+          amount_gross: 450000.00,
+          amount_commission: 22500.00,
+          amount_net_payroll: 427500.00,
+          entry_type: 'payroll_funding',
+          description: 'Fondeo de Nómina Quincenal Invoiced',
+          operation_date: formatOffsetDate(10),
+          is_reconciled: true,
+          bank_transaction_id: txId1
+        });
+      }
+
+      if (clientB && compAId) {
+        demoRecords.push({
+          id: crypto.randomUUID(),
+          client_id: clientB.id,
+          internal_company_id: compAId,
+          invoice_uuid: crypto.randomUUID(),
+          is_invoiced: true,
+          virtual_bucket_label: null,
+          amount_gross: 120000.00,
+          amount_commission: 6000.00,
+          amount_net_payroll: 114000.00,
+          entry_type: 'payroll_funding',
+          description: 'Fondeo de Nómina Blue Log Invoice',
+          operation_date: formatOffsetDate(8),
+          is_reconciled: false,
+          bank_transaction_id: null
+        });
+
+        demoBankTxs.push({
+          id: crypto.randomUUID(),
+          internal_company_id: compAId,
+          amount: 115000.00,
+          transaction_date: formatOffsetDate(8),
+          description: 'SPEI RECIBIDO BLUE OCEAN LOG',
+          reference_number: 'SPEI9988221',
+          is_reconciled: false,
+          is_non_invoiced: false,
+          transaction_category: 'client_operation',
+          ingestion_source: 'daily_screenshot_assisted'
+        });
+      }
+
+      if (clientC && compBId) {
+        const txId3 = crypto.randomUUID();
+        demoBankTxs.push({
+          id: txId3,
+          internal_company_id: compBId,
+          amount: 200000.00,
+          transaction_date: formatOffsetDate(5),
+          description: 'TRANSFERENCIA SEIVON NOMINA',
+          reference_number: 'SPEI7766554',
+          is_reconciled: true,
+          is_non_invoiced: true,
+          transaction_category: 'client_operation',
+          ingestion_source: 'daily_screenshot_assisted'
+        });
+        demoRecords.push({
+          id: crypto.randomUUID(),
+          client_id: clientC.id,
+          internal_company_id: compBId,
+          invoice_uuid: null,
+          is_invoiced: false,
+          virtual_bucket_label: 'SEIVON',
+          amount_gross: 200000.00,
+          amount_commission: 0.00,
+          amount_net_payroll: 200000.00,
+          entry_type: 'payroll_funding',
+          description: 'Fondeo Virtual Seivon sin Factura',
+          operation_date: formatOffsetDate(5),
+          is_reconciled: true,
+          bank_transaction_id: txId3
+        });
+      }
+
+      if (compAId) {
+        demoBankTxs.push({
+          id: crypto.randomUUID(),
+          internal_company_id: compAId,
+          amount: -320000.00,
+          transaction_date: formatOffsetDate(4),
+          description: 'DISPERSION NOMINA COLABORADORES BATCH',
+          reference_number: 'DISP000982',
+          is_reconciled: true,
+          is_non_invoiced: false,
+          transaction_category: 'client_operation',
+          ingestion_source: 'daily_screenshot_assisted'
+        });
+      }
+
+      if (compBId) {
+        demoBankTxs.push({
+          id: crypto.randomUUID(),
+          internal_company_id: compBId,
+          amount: -180000.00,
+          transaction_date: formatOffsetDate(3),
+          description: 'DISPERSION NOMINA SEIVON BATCH',
+          reference_number: 'DISP000983',
+          is_reconciled: true,
+          is_non_invoiced: true,
+          transaction_category: 'client_operation',
+          ingestion_source: 'daily_screenshot_assisted'
+        });
+      }
+
+      if (compAId && compBId) {
+        demoBankTxs.push({
+          id: crypto.randomUUID(),
+          internal_company_id: compAId,
+          amount: -50000.00,
+          transaction_date: formatOffsetDate(2),
+          description: 'TRASPASO DE FONDOS INTERCOMPAÑIA',
+          reference_number: 'INT-998822',
+          is_reconciled: true,
+          is_non_invoiced: false,
+          transaction_category: 'internal_transfer',
+          ingestion_source: 'daily_screenshot_assisted'
+        });
+        demoBankTxs.push({
+          id: crypto.randomUUID(),
+          internal_company_id: compBId,
+          amount: 50000.00,
+          transaction_date: formatOffsetDate(2),
+          description: 'RECEPCION TRASPASO INTERCOMPAÑIA',
+          reference_number: 'INT-998823',
+          is_reconciled: true,
+          is_non_invoiced: false,
+          transaction_category: 'internal_transfer',
+          ingestion_source: 'daily_screenshot_assisted'
+        });
+      }
+
+      const { error: insBankErr } = await supabase.from('bank_transactions').insert(demoBankTxs);
+      if (insBankErr) throw insBankErr;
+
+      const { error: insRecErr } = await supabase.from('billing_records').insert(demoRecords);
+      if (insRecErr) throw insRecErr;
+
+      alert('Datos de simulación cargados con éxito.');
+      window.location.reload();
+    } catch (err: any) {
+      console.error('Error loading demo data:', err);
+      alert('Error al cargar datos de demo: ' + err.message);
+    }
+  };
+
+  // Access Wall
+  if (!isOwner) {
+    return (
+      <div className={styles.accessWall}>
+        <div className={styles.wallCard}>
+          <div className={styles.wallIcon}>
+            <ShieldAlert size={48} />
+          </div>
+          <h2>Acceso Restringido</h2>
+          <p>Este Panel de Control Ejecutivo contiene información financiera confidencial de utilidades y flujo de caja.</p>
+          <p className={styles.roleNotice}>Solo usuarios con el rol de <strong>Propietario (Owner)</strong> están autorizados a visualizar este panel.</p>
+          <button className={styles.redirectBtn} onClick={() => navigate('/audit')}>
+            Ir a Conciliación (Auditoría)
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.container}>
@@ -461,11 +786,11 @@ export const Dashboard = () => {
           </div>
           <div className={styles.cardContent}>
             <h2 className={styles.cardValue}>
-              {isLoading ? '...' : formatCurrency(totalBankCashFlow)}
+              {isLoading ? '...' : formatCurrency(consolidatedTreasury)}
             </h2>
             <span className={styles.cardBadge}>+4.2%</span>
           </div>
-          <p className={styles.cardSub}>Consolidado de transacciones históricas</p>
+          <p className={styles.cardSub}>Consolidado de flujo real neto (excluye transferencias internas)</p>
         </div>
 
         {/* Card 2: True Net Utility */}
@@ -483,7 +808,7 @@ export const Dashboard = () => {
             </h2>
             <span className={styles.cardBadge}>+1.8%</span>
           </div>
-          <p className={styles.cardSub}>Acumulado de comisiones cobradas</p>
+          <p className={styles.cardSub}>Comisiones netas cobradas de nóminas conciliadas</p>
         </div>
 
         {/* Card 3: Active Client Retainers */}
@@ -497,15 +822,18 @@ export const Dashboard = () => {
           </div>
           <div className={styles.cardContent}>
             <h2 className={styles.cardValue}>
-              {isLoading ? '...' : formatCurrency(retainerBalance)}
+              {isLoading ? '...' : formatCurrency(activeEscrow)}
             </h2>
             <span className={`${styles.cardBadge} ${styles.badgeStable}`}>ESTABLE</span>
           </div>
-          <p className={styles.cardSub}>Balance neto depositado en garantía</p>
+          <p className={styles.cardSub}>Cojín financiero / provisión acumulada en garantía</p>
         </div>
 
         {/* Card 4: Unreconciled Anomalies */}
-        <div className={`${styles.metricCard} ${styles.cardDanger}`}>
+        <div 
+          className={`${styles.metricCard} ${styles.cardDanger} ${styles.clickableCard}`}
+          onClick={() => navigate('/audit')}
+        >
           <div className={styles.cardIndicator}></div>
           <div className={styles.cardHeader}>
             <span className={styles.cardTitle}>Anomalías sin Conciliar</span>
@@ -517,9 +845,9 @@ export const Dashboard = () => {
             <h2 className={styles.cardValue}>
               {isLoading ? '...' : unreconciledCount}
             </h2>
-            <span className={`${styles.cardBadge} ${styles.badgeDanger}`}>CRÍTICO</span>
+            <span className={`${styles.cardBadge} ${styles.badgeDanger}`}>REVISIÓN</span>
           </div>
-          <p className={styles.cardSub}>Acción inmediata requerida</p>
+          <p className={styles.cardSub}>Pendiente de conciliación manual (click para auditar)</p>
         </div>
       </div>
 
@@ -530,7 +858,7 @@ export const Dashboard = () => {
           <div className={styles.sectionHeader}>
             <div>
               <h3 className={styles.sectionTitle}>Entradas vs. Salidas Diarias</h3>
-              <p className={styles.sectionSub}>Flujos de cuenta liquidados</p>
+              <p className={styles.sectionSub}>Operación de clientes liquidada (30D Timeline)</p>
             </div>
             <div className={styles.chartControls}>
               <div className={styles.legendItem}>
@@ -580,7 +908,7 @@ export const Dashboard = () => {
                   ))}
                 </div>
                 <div className={styles.chartLabels}>
-                  {chartDays.filter((_, i) => timeframe === '7days' ? true : i % 2 === 0).map((d, i) => (
+                  {chartDays.map((d, i) => (
                     <span key={i}>{d.day}</span>
                   ))}
                 </div>
@@ -589,129 +917,236 @@ export const Dashboard = () => {
           </div>
         </section>
 
-        {/* Retainer Health Panel */}
+        {/* Retainer Health Panel / Provisions Directory */}
         <section className={styles.healthSection}>
-          <h3 className={styles.sectionTitle}>Salud de Retainers</h3>
-          <p className={styles.sectionSub}>Capacidad y uso acumulado por cliente</p>
+          <h3 className={styles.sectionTitle}>Directorio de Provisiones</h3>
+          <p className={styles.sectionSub}>Saldos en garantía para dispersión de nóminas</p>
 
           <div className={styles.healthList}>
             {isLoading ? (
-              <p className={styles.loadingText}>Cargando salud de retainers...</p>
-            ) : retainerHealth.length === 0 ? (
+              <p className={styles.loadingText}>Cargando provisiones...</p>
+            ) : clients.length === 0 ? (
               <p className={styles.emptyText}>No hay datos de clientes.</p>
             ) : (
-              retainerHealth.map((item, index) => (
-                <div key={index} className={styles.healthItem}>
-                  <div className={styles.healthMeta}>
-                    <span className={styles.clientName}>{item.name}</span>
-                    <span className={styles.healthPct}>{item.pct}%</span>
+              clients.slice(0, 4).map((client) => {
+                const limit = 1000000;
+                const pct = Math.min(Math.round(((client.retainer_balance || 0) / limit) * 100), 100);
+                
+                return (
+                  <div key={client.id} className={styles.healthItem} onClick={() => handleOpenDrawer(client)}>
+                    <div className={styles.healthMeta}>
+                      <span className={styles.clientName}>{client.commercial_name || client.name}</span>
+                      <span className={styles.healthPct}>{formatCurrency(client.retainer_balance || 0)}</span>
+                    </div>
+                    <div className={styles.progressTrack}>
+                      <div 
+                        className={`${styles.progressBar} ${pct < 20 ? styles.danger : pct < 60 ? styles.neutral : styles.success}`}
+                        style={{ width: `${pct}%` }}
+                      ></div>
+                    </div>
+                    <div className={styles.healthDetails}>
+                      <span>Comisión: {client.commission_percentage || 0}%</span>
+                      <span className={styles.editLink}>Editar Perfil</span>
+                    </div>
                   </div>
-                  <div className={styles.progressTrack}>
-                    <div 
-                      className={`${styles.progressBar} ${styles[item.variant]}`}
-                      style={{ width: `${item.pct}%` }}
-                    ></div>
-                  </div>
-                  <div className={styles.healthDetails}>
-                    <span>{item.cap}</span>
-                    <span className={item.variant === 'danger' ? styles.lowText : ''}>{item.used}</span>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
 
-          <button className={styles.viewRetainersBtn} onClick={() => navigate('/ledger')}>
-            <span>Ver todos los Retainers de Clientes</span>
+          <button className={styles.viewRetainersBtn} onClick={() => setIsDrawerOpen(true)}>
+            <span>Ver y Gestionar Entidades</span>
             <ArrowRight size={14} />
           </button>
         </section>
-      </div>
 
-      {/* Bottom Detail Table: Recent Large Volume Transactions */}
-      <section className={styles.tableSection}>
-        <div className={styles.tableHeader}>
-          <h3 className={styles.tableTitle}>Transacciones Recientes de Gran Volumen</h3>
-          <div className={styles.tableActions} style={{ position: 'relative' }}>
-            <button className={styles.tableBtn} onClick={() => setShowFilterDropdown(!showFilterDropdown)}>
-              <Filter size={16} />
-            </button>
-            {showFilterDropdown && (
-              <div className={styles.inlineFilterDropdown}>
-                <button 
-                  className={`${styles.filterOption} ${statusFilter === 'all' ? styles.activeOption : ''}`}
-                  onClick={() => { setStatusFilter('all'); setShowFilterDropdown(false); }}
-                >
-                  Todos
-                </button>
-                <button 
-                  className={`${styles.filterOption} ${statusFilter === 'reconciled' ? styles.activeOption : ''}`}
-                  onClick={() => { setStatusFilter('reconciled'); setShowFilterDropdown(false); }}
-                >
-                  Conciliado
-                </button>
-                <button 
-                  className={`${styles.filterOption} ${statusFilter === 'pending' ? styles.activeOption : ''}`}
-                  onClick={() => { setStatusFilter('pending'); setShowFilterDropdown(false); }}
-                >
-                  Pendiente
-                </button>
-              </div>
-            )}
-            <button className={styles.tableBtn} onClick={handleExportCSV} disabled={filteredRecords.length === 0}>
-              <Download size={16} />
+        {/* Billing Matrix Component */}
+        <div className={styles.matrixContainer}>
+          <div className={styles.matrixHeader}>
+            <h4 className={styles.matrixTitle}>Interactive Invoicing &amp; Billing Matrix</h4>
+            <button className={styles.exportBtn} onClick={handleExportMatrixCSV}>
+              <Download size={14} className="mr-1" /> Exportar CSV
             </button>
           </div>
-        </div>
-
-        <div className={styles.tableWrapper}>
-          {isLoading ? (
-            <p className={styles.loadingText}>Cargando transacciones...</p>
-          ) : filteredRecords.length === 0 ? (
-            <p className={styles.emptyText}>No se encontraron transacciones de gran volumen.</p>
-          ) : (
-            <table className={styles.table}>
+          
+          <div className={styles.matrixScroll}>
+            <table className={styles.matrixTable}>
               <thead>
                 <tr>
-                  <th>Fecha</th>
-                  <th>Entidad</th>
-                  <th>Tipo</th>
-                  <th>Estado</th>
-                  <th className={styles.textRight}>Monto</th>
+                  <th className={styles.stickyColumn}>ENTIDAD / CLIENTE</th>
+                  {matrixColumns.map(col => (
+                    <th key={col.id}>{col.header}</th>
+                  ))}
+                  <th className={styles.totalHeader}>TOTAL FACTURADO</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredRecords.slice(0, 5).map(record => (
-                  <tr key={record.id} className={styles.row}>
-                    <td className={styles.cellMono}>{record.operation_date}</td>
-                    <td className={styles.cellBold}>{record.clients?.name || 'Entidad Desconocida'}</td>
-                    <td>
-                      <span className={styles.typeBadge}>
-                        {record.entry_type === 'funding' 
-                          ? 'FONDEO_RETAINER' 
-                          : record.entry_type === 'fee' 
-                          ? 'AJUSTE_COMISION' 
-                          : 'DISPERSION_NOMINA'}
-                      </span>
-                    </td>
-                    <td>
-                      <div className={styles.statusCell}>
-                        <span className={`${styles.statusDot} ${record.is_reconciled ? styles.dotSuccess : styles.dotDanger}`}></span>
-                        <span className={`${styles.statusText} ${record.is_reconciled ? styles.textSuccess : styles.textDanger}`}>
-                          {record.is_reconciled ? 'Conciliado' : 'Pendiente'}
-                        </span>
-                      </div>
-                    </td>
-                    <td className={`${styles.cellMono} ${styles.textRight} ${styles.cellBold}`}>
-                      {formatCurrency(record.amount)}
-                    </td>
-                  </tr>
-                ))}
+                {matrixData.map(group => {
+                  const isCollapsed = collapsedGroups[group.id];
+                  
+                  return (
+                    <div key={group.id} style={{ display: 'contents' }}>
+                      {/* Parent Group Row */}
+                      <tr className={`${styles.parentRow} ${isCollapsed ? styles.collapsed : ''}`} onClick={() => toggleGroup(group.id)}>
+                        <td className={styles.stickyColumn}>
+                          <div className={styles.entityName}>
+                            {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+                            <span>{group.name}</span>
+                          </div>
+                        </td>
+                        {matrixColumns.map(col => (
+                          <td key={col.id} className={styles.numCell}>
+                            {formatCurrency(group.values[col.id] || 0)}
+                          </td>
+                        ))}
+                        <td className={`${styles.numCell} ${styles.totalCell}`}>
+                          {formatCurrency(group.total)}
+                        </td>
+                      </tr>
+
+                      {/* Relational Child Rows */}
+                      {!isCollapsed && group.clients.map(client => (
+                        <tr key={client.id} className={styles.childRow}>
+                          <td className={styles.stickyColumn}>
+                            <span className={styles.childName}>{client.name}</span>
+                          </td>
+                          {matrixColumns.map(col => (
+                            <td key={col.id} className={styles.numCell}>
+                              {formatCurrency(client.values[col.id] || 0)}
+                            </td>
+                          ))}
+                          <td className={styles.numCell}>
+                            {formatCurrency(client.total)}
+                          </td>
+                        </tr>
+                      ))}
+                    </div>
+                  );
+                })}
               </tbody>
+              
+              <tfoot>
+                {/* Differential Delta validation Row */}
+                <tr className={styles.footerRow}>
+                  <td className={styles.stickyColumn}>TOTAL FACTURADO (INVOICES)</td>
+                  {matrixColumns.map(col => (
+                    <td key={col.id} className={styles.numCell}>
+                      {formatCurrency(matrixTotals.columns[col.id]?.billed || 0)}
+                    </td>
+                  ))}
+                  <td className={styles.numCell}>{formatCurrency(matrixTotals.grantTotalBilled)}</td>
+                </tr>
+                <tr className={styles.footerRow}>
+                  <td className={styles.stickyColumn}>DEPOSITOS BANCARIOS (CASH)</td>
+                  {matrixColumns.map(col => (
+                    <td key={col.id} className={styles.numCell}>
+                      {formatCurrency(matrixTotals.columns[col.id]?.cash || 0)}
+                    </td>
+                  ))}
+                  <td className={styles.numCell}>{formatCurrency(matrixTotals.grantTotalCash)}</td>
+                </tr>
+                <tr className={styles.deltaRow}>
+                  <td className={styles.stickyColumn}>DIFERENCIA</td>
+                  {matrixColumns.map(col => {
+                    const delta = matrixTotals.columns[col.id]?.delta || 0;
+                    const hasDiscrepancy = Math.abs(delta) > 0.01;
+                    return (
+                      <td key={col.id} className={`${styles.numCell} ${hasDiscrepancy ? styles.shortfall : styles.balanced}`}>
+                        {formatCurrency(delta)}
+                      </td>
+                    );
+                  })}
+                  <td className={`${styles.numCell} ${Math.abs(matrixTotals.grantTotalDelta) > 0.01 ? styles.shortfall : styles.balanced}`}>
+                    {formatCurrency(matrixTotals.grantTotalDelta)}
+                  </td>
+                </tr>
+              </tfoot>
             </table>
-          )}
+          </div>
         </div>
-      </section>
+      </div>
+
+      {/* Side-Drawer Overlay for Client Provisions Profile Edit */}
+      {isDrawerOpen && (
+        <div className={styles.drawerOverlay} onClick={() => setIsDrawerOpen(false)}>
+          <div className={styles.drawerContent} onClick={e => e.stopPropagation()}>
+            <div className={styles.drawerHeader}>
+              <h3>{editingClient ? 'Editar Perfil del Cliente' : 'Directorio de Clientes'}</h3>
+              <button className={styles.closeBtn} onClick={() => setIsDrawerOpen(false)}>
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className={styles.drawerBody}>
+              {editingClient ? (
+                <form onSubmit={handleSaveClient} className={styles.editForm}>
+                  <div className={styles.formGroup}>
+                    <label>Nombre Comercial</label>
+                    <input 
+                      type="text" 
+                      value={editForm.commercialName} 
+                      onChange={e => setEditForm({ ...editForm, commercialName: e.target.value })}
+                      placeholder="e.g. Blue Logistics"
+                    />
+                  </div>
+                  <div className={styles.formGroup}>
+                    <label>Razón Social (Legal Name)</label>
+                    <input 
+                      type="text" 
+                      value={editForm.legalName} 
+                      onChange={e => setEditForm({ ...editForm, legalName: e.target.value })}
+                      placeholder="e.g. Blue Ocean Logistics S.A. de C.V."
+                    />
+                  </div>
+                  <div className={styles.formGroup}>
+                    <label>Porcentaje de Comisión (%)</label>
+                    <input 
+                      type="number" 
+                      step="0.01"
+                      value={editForm.commissionPercentage} 
+                      onChange={e => setEditForm({ ...editForm, commissionPercentage: Number(e.target.value) })}
+                    />
+                  </div>
+                  <div className={styles.formGroup}>
+                    <label>Saldo de Garantía / Provisión ($)</label>
+                    <input 
+                      type="number" 
+                      step="0.01"
+                      value={editForm.retainerBalance} 
+                      onChange={e => setEditForm({ ...editForm, retainerBalance: Number(e.target.value) })}
+                    />
+                  </div>
+                  
+                  <div className={styles.formActions}>
+                    <button type="button" className={styles.cancelBtn} onClick={() => setEditingClient(null)}>
+                      Volver a la lista
+                    </button>
+                    <button type="submit" className={styles.saveBtn}>
+                      Guardar Cambios
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className={styles.clientList}>
+                  <p className={styles.subText}>Seleccione una entidad para modificar sus coeficientes y saldos.</p>
+                  {clients.map(c => (
+                    <div key={c.id} className={styles.clientItem} onClick={() => handleOpenDrawer(c)}>
+                      <div className={styles.clientInfo}>
+                        <strong>{c.commercial_name || c.name}</strong>
+                        <span>{c.legal_name || 'Sin Razón Social'}</span>
+                      </div>
+                      <div className={styles.clientStats}>
+                        <span className={styles.balance}>{formatCurrency(c.retainer_balance || 0)}</span>
+                        <span className={styles.badge}>{c.commission_percentage || 0}% Comisión</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
