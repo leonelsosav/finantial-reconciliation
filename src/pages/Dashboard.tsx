@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useDatabase } from '../hooks/useDatabase';
@@ -985,7 +985,7 @@ export const Dashboard = () => {
                   const isCollapsed = collapsedGroups[group.id];
                   
                   return (
-                    <div key={group.id} style={{ display: 'contents' }}>
+                    <Fragment key={group.id}>
                       {/* Parent Group Row */}
                       <tr className={`${styles.parentRow} ${isCollapsed ? styles.collapsed : ''}`} onClick={() => toggleGroup(group.id)}>
                         <td className={styles.stickyColumn}>
@@ -1020,7 +1020,7 @@ export const Dashboard = () => {
                           </td>
                         </tr>
                       ))}
-                    </div>
+                    </Fragment>
                   );
                 })}
               </tbody>
