@@ -112,7 +112,7 @@ export const MainLayout = () => {
             </NavLink>
           )}
 
-          {profile?.role === 'owner' && (
+          {(profile?.role === 'owner' || profile?.role === 'auditor') && (
             <NavLink 
               to="/bank" 
               className={({ isActive }) => `${styles.navItem} ${isActive ? styles.active : ''}`}
