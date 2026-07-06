@@ -6,15 +6,14 @@ import type { InternalCompany, BankTransaction } from '../types';
 import { 
   LogOut, 
   LayoutDashboard, 
-  FileSpreadsheet, 
   Landmark, 
   ShieldCheck, 
-  Search, 
   Bell, 
   HelpCircle, 
   Building2, 
   User, 
-  Plus 
+  Plus,
+  CloudUpload
 } from 'lucide-react';
 import styles from './MainLayout.module.scss';
 
@@ -26,7 +25,6 @@ export const MainLayout = () => {
   const { data: anomalies, fetchData: fetchAnomalies } = useDatabase<BankTransaction>('bank_transactions');
 
   const [showNotifications, setShowNotifications] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
   const popoverRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -59,12 +57,6 @@ export const MainLayout = () => {
   const handleSignOut = async () => {
     await signOut();
     navigate('/login');
-  };
-
-  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && searchQuery.trim()) {
-      navigate(`/ledger?search=${encodeURIComponent(searchQuery.trim())}`);
-    }
   };
 
   const getInitials = (name: string | null | undefined) => {
@@ -112,11 +104,11 @@ export const MainLayout = () => {
 
           {(profile?.role === 'owner' || profile?.role === 'ops') && (
             <NavLink 
-              to="/ledger" 
+              to="/vault" 
               className={({ isActive }) => `${styles.navItem} ${isActive ? styles.active : ''}`}
             >
-              <FileSpreadsheet size={18} />
-              <span>Libro Diario</span>
+              <CloudUpload size={18} />
+              <span>Bóveda Ingestión</span>
             </NavLink>
           )}
 
@@ -175,18 +167,6 @@ export const MainLayout = () => {
                   </option>
                 ))}
               </select>
-            </div>
-            <div className={styles.divider}></div>
-            <div className={styles.searchBar}>
-              <Search size={16} className={styles.searchIcon} />
-              <input 
-                type="text" 
-                placeholder="Buscar transacciones, entidades..." 
-                className={styles.searchInput}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={handleSearchKeyDown}
-              />
             </div>
           </div>
 
