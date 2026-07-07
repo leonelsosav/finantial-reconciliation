@@ -16,9 +16,11 @@ import {
   ChevronDown,
   ChevronRight,
   ShieldAlert,
-  X
+  X,
+  ChevronsUpDown
 } from 'lucide-react';
 import styles from './Dashboard.module.scss';
+import demoData from '../assets/data.json';
 
 export const Dashboard = () => {
   const { profile, selectedCompanyId } = useAuth();
@@ -406,6 +408,23 @@ export const Dashboard = () => {
     }));
   };
 
+  const areAllCollapsed = useMemo(() => {
+    if (matrixData.length === 0) return false;
+    return matrixData.every(group => collapsedGroups[group.id]);
+  }, [matrixData, collapsedGroups]);
+
+  const handleToggleAllGroups = () => {
+    if (areAllCollapsed) {
+      setCollapsedGroups({});
+    } else {
+      const newCollapsed: Record<string, boolean> = {};
+      matrixData.forEach(group => {
+        newCollapsed[group.id] = true;
+      });
+      setCollapsedGroups(newCollapsed);
+    }
+  };
+
   // Currency Formatter
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('es-MX', {
@@ -521,23 +540,10 @@ export const Dashboard = () => {
 
   const handleLoadDemoData = async () => {
     try {
-      // 0. Ensure internal companies exist. If not, seed them first.
-      let activeCompanies = [...companies];
-      if (activeCompanies.length === 0) {
-        const { data: newCompanies, error: compErr } = await supabase.from('internal_companies').insert([
-          { name: 'Kardex Finanzas S.A. de C.V.', tax_id: 'KAR990812AA1' },
-          { name: 'Operadora de Nóminas Alfa', tax_id: 'ONA041218BB2' }
-        ]).select();
-        if (compErr) throw compErr;
-        activeCompanies = newCompanies || [];
-      }
-
-      const compAId = activeCompanies[0]?.id;
-      const compBId = activeCompanies[1]?.id || compAId;
-
-      if (!compAId) {
-        alert('Error: No se pudo obtener o crear una empresa interna para asociar.');
-        return;
+      // 0. Decouple profiles from internal companies
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.from('profiles').update({ internal_company_id: null }).eq('id', user.id);
       }
 
       // 1. Clean up existing records in cascading order to respect foreign key constraints
@@ -545,79 +551,79 @@ export const Dashboard = () => {
       await supabase.from('bank_transactions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       await supabase.from('clients').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       await supabase.from('client_groups').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('internal_companies').delete().neq('id', '00000000-0000-0000-0000-000000000000');
 
-      // 2. Insert Client Groups
-      const { data: grpData, error: grpError } = await supabase.from('client_groups').insert([
-        { group_name: 'Grupo Industrial Aceros' },
-        { group_name: 'Consorcio Tecnológico' },
-        { group_name: 'Corporativo Retail' }
-      ]).select();
+      // 2. Insert Internal Companies from data.json
+      const { data: insertedCompanies, error: compErr } = await supabase
+        .from('internal_companies')
+        .insert(demoData.internal_companies)
+        .select();
+      if (compErr) throw compErr;
+
+      const companyMap = new Map<string, string>();
+      insertedCompanies?.forEach(c => {
+        companyMap.set(c.name, c.id);
+      });
+
+      // 3. Insert Client Groups
+      const groupNames = demoData.client_directory.map(g => ({ group_name: g.group_name }));
+      const { data: insertedGroups, error: grpError } = await supabase
+        .from('client_groups')
+        .insert(groupNames)
+        .select();
       if (grpError) throw grpError;
 
-      const gIndId = grpData.find(g => g.group_name === 'Grupo Industrial Aceros')?.id;
-      const gTechId = grpData.find(g => g.group_name === 'Consorcio Tecnológico')?.id;
-      const gRetailId = grpData.find(g => g.group_name === 'Corporativo Retail')?.id;
+      const groupMap = new Map<string, string>();
+      insertedGroups?.forEach(g => {
+        groupMap.set(g.group_name, g.id);
+      });
 
-      // 3. Insert Clients linked to groups and companies
-      const { data: clientData, error: clientErr } = await supabase.from('clients').insert([
-        { 
-          name: 'Aceros del Bajío S.A. de C.V.',
-          commercial_name: 'Aceros del Bajío',
-          legal_name: 'Aceros del Bajío S.A. de C.V.',
-          tax_id: 'ABA920801TR3',
-          commission_percentage: 4,
-          retainer_balance: 1250000,
-          client_group_id: gIndId || null,
-          internal_company_id: compAId
-        },
-        { 
-          name: 'Metales del Norte S.A. de C.V.',
-          commercial_name: 'Metales del Norte',
-          legal_name: 'Metales del Norte S.A. de C.V.',
-          tax_id: 'MNO951110HR4',
-          commission_percentage: 4,
-          retainer_balance: 450000,
-          client_group_id: gIndId || null,
-          internal_company_id: compAId
-        },
-        { 
-          name: 'Tech Solutions Mexico S. de R.L.',
-          commercial_name: 'Tech Solutions',
-          legal_name: 'Tech Solutions Mexico S. de R.L. de C.V.',
-          tax_id: 'TSM080220LA5',
-          commission_percentage: 6,
-          retainer_balance: 3200000,
-          client_group_id: gTechId || null,
-          internal_company_id: compBId
-        },
-        { 
-          name: 'Software Express S.A.',
-          commercial_name: 'Software Express',
-          legal_name: 'Software Express S.A. de C.V.',
-          tax_id: 'SEX120405PP6',
-          commission_percentage: 5,
-          retainer_balance: 850000,
-          client_group_id: gTechId || null,
-          internal_company_id: compBId
-        },
-        { 
-          name: 'Distribuidora Mayorista S.A.',
-          commercial_name: 'Distribuidora Mayorista',
-          legal_name: 'Distribuidora Mayorista S.A. de C.V.',
-          tax_id: 'DMA020909UU7',
-          commission_percentage: 3,
-          retainer_balance: 2100000,
-          client_group_id: gRetailId || null,
-          internal_company_id: compAId
+      // 4. Insert Client Subsidiaries
+      const clientsToInsert: any[] = [];
+      
+      // Map to keep track of subsidiaries in a group to link billing records later
+      const groupClientsMap = new Map<string, any[]>();
+
+      for (const group of demoData.client_directory) {
+        const groupId = groupMap.get(group.group_name) || null;
+        
+        // Find which internal company to link to. 
+        // We look at the first billing record of the group that specifies an internal company.
+        let targetCompanyId = insertedCompanies[0]?.id;
+        for (const br of group.billing_records) {
+          if ('internal_company' in br && br.internal_company) {
+            const compId = companyMap.get(br.internal_company);
+            if (compId) {
+              targetCompanyId = compId;
+              break;
+            }
+          }
         }
-      ]).select();
-      if (clientErr) throw clientErr;
 
-      const clientA = clientData.find(c => c.name === 'Aceros del Bajío S.A. de C.V.');
-      const clientB = clientData.find(c => c.name === 'Metales del Norte S.A. de C.V.');
-      const clientC = clientData.find(c => c.name === 'Tech Solutions Mexico S. de R.L.');
-      const clientD = clientData.find(c => c.name === 'Software Express S.A.');
-      const clientE = clientData.find(c => c.name === 'Distribuidora Mayorista S.A.');
+        const groupSubs = [];
+        for (const sub of group.subsidiaries) {
+          const clientData = {
+            id: crypto.randomUUID(),
+            name: sub.legal_name || sub.commercial_name,
+            commercial_name: sub.commercial_name,
+            legal_name: sub.legal_name,
+            tax_id: sub.tax_id,
+            commission_percentage: sub.commission_percentage,
+            retainer_balance: sub.retainer_balance,
+            client_group_id: groupId,
+            internal_company_id: targetCompanyId
+          };
+          clientsToInsert.push(clientData);
+          groupSubs.push(clientData);
+        }
+        groupClientsMap.set(group.group_name, groupSubs);
+      }
+
+      const { data: insertedClients, error: clientErr } = await supabase
+        .from('clients')
+        .insert(clientsToInsert)
+        .select();
+      if (clientErr) throw clientErr;
 
       const formatOffsetDate = (offsetDays: number) => {
         const d = new Date();
@@ -625,202 +631,231 @@ export const Dashboard = () => {
         return DateEngine.getLocalYYYYMMDD(d);
       };
 
-      const demoRecords = [];
-      const demoBankTxs = [];
+      const demoRecords: any[] = [];
+      const demoBankTxs: any[] = [];
 
-      // 1. Perfect Reconciled Flow (Aceros del Bajío)
-      if (clientA) {
-        const txId1 = crypto.randomUUID();
+      // Helper function to create matching bank transaction
+      const createBankTx = (
+        amount: number,
+        offsetDays: number,
+        description: string,
+        category: 'client_operation' | 'corporate_opex',
+        companyId: string,
+        isReconciled: boolean
+      ) => {
+        const txId = crypto.randomUUID();
         demoBankTxs.push({
-          id: txId1,
-          internal_company_id: compAId,
-          amount: 580000.00,
-          transaction_date: formatOffsetDate(2),
-          description: 'TRSP SPEI NOMINA ACEROS BAJIO',
-          reference_number: 'SPEI8827391',
-          is_reconciled: true,
+          id: txId,
+          internal_company_id: companyId,
+          amount,
+          transaction_date: formatOffsetDate(offsetDays),
+          description,
+          reference_number: 'SPEI' + Math.floor(1000000 + Math.random() * 9000000),
+          is_reconciled: isReconciled,
           is_non_invoiced: false,
-          transaction_category: 'client_operation',
+          transaction_category: category,
           ingestion_source: 'daily_screenshot_assisted'
         });
-        demoRecords.push({
-          id: crypto.randomUUID(),
-          client_id: clientA.id,
-          internal_company_id: compAId,
-          invoice_uuid: crypto.randomUUID(),
-          is_invoiced: true,
-          virtual_bucket_label: null,
-          amount_gross: 580000.00,
-          amount_commission: 23200.00,
-          amount_net_payroll: 556800.00,
-          entry_type: 'payroll_funding',
-          description: 'Fondeo de Nómina Quincenal Invoiced',
-          operation_date: formatOffsetDate(2),
-          is_reconciled: true,
-          bank_transaction_id: txId1
-        });
+        return txId;
+      };
+
+      // 5. Populate Billing Records and Bank Transactions
+      let recordIndex = 0;
+      for (const group of demoData.client_directory) {
+        const subs = groupClientsMap.get(group.group_name) || [];
+        if (subs.length === 0) continue;
+
+        // Default to the first client in the group for linking billing records
+        const primaryClient = subs[0];
+
+        for (const br of group.billing_records) {
+          recordIndex++;
+          const grossAmount = br.amount_gross;
+          const commPercent = primaryClient.commission_percentage;
+          const commission = grossAmount * (commPercent / 100);
+          const netPayroll = grossAmount - commission;
+
+          // Determine internal company for this billing record
+          let billingCompanyId = primaryClient.internal_company_id;
+          if ('internal_company' in br && br.internal_company) {
+            const compId = companyMap.get(br.internal_company);
+            if (compId) billingCompanyId = compId;
+          }
+
+          const offsetDays = (recordIndex % 10) + 1; // spread dates between 1 and 10 days ago
+          
+          let bankTxId: string | null = null;
+          let isReconciled = false;
+
+          // Build scenarios based on group
+          if (group.group_name === 'Alberto Compean') {
+            // Perfect Reconciled Flow
+            isReconciled = true;
+            bankTxId = createBankTx(
+              grossAmount,
+              offsetDays,
+              `TRSP SPEI NOMINA ${primaryClient.commercial_name?.toUpperCase()}`,
+              'client_operation',
+              billingCompanyId,
+              true
+            );
+          } else if (group.group_name === 'Jaguar') {
+            // Mismatched amount
+            isReconciled = false;
+            createBankTx(
+              grossAmount - 100, // 100 less
+              offsetDays,
+              `SPEI FDO ${primaryClient.commercial_name?.toUpperCase()}`,
+              'client_operation',
+              billingCompanyId,
+              false
+            );
+          } else if (group.group_name === 'Carolina') {
+            // Mix of reconciled, mismatched and missing
+            if (recordIndex % 3 === 0) {
+              // Perfect Match
+              isReconciled = true;
+              bankTxId = createBankTx(
+                grossAmount,
+                offsetDays,
+                `ABONO ${primaryClient.commercial_name?.toUpperCase()}`,
+                'client_operation',
+                billingCompanyId,
+                true
+              );
+            } else if (recordIndex % 3 === 1) {
+              // Mismatched
+              isReconciled = false;
+              createBankTx(
+                grossAmount + 500, // 500 more
+                offsetDays,
+                `ABONO COMPLEMENTO ${primaryClient.commercial_name?.toUpperCase()}`,
+                'client_operation',
+                billingCompanyId,
+                false
+              );
+            } else {
+              // Missing Bank Transaction
+              isReconciled = false;
+            }
+          } else if (group.group_name === 'Leonel') {
+            // Perfect Reconciled
+            isReconciled = true;
+            bankTxId = createBankTx(
+              grossAmount,
+              offsetDays,
+              `TRANSF ${primaryClient.commercial_name?.toUpperCase()}`,
+              'client_operation',
+              billingCompanyId,
+              true
+            );
+          } else if (group.group_name === 'Daniel Castillo') {
+            // Missing bank transaction
+            isReconciled = false;
+          } else if (group.group_name === 'Elias') {
+            // 2 Reconciled, 2 Unreconciled
+            if (recordIndex % 2 === 0) {
+              isReconciled = true;
+              bankTxId = createBankTx(
+                grossAmount,
+                offsetDays,
+                `DEPOSITO ${primaryClient.commercial_name?.toUpperCase()}`,
+                'client_operation',
+                billingCompanyId,
+                true
+              );
+            } else {
+              isReconciled = false;
+            }
+          } else if (group.group_name === 'Arc patatuchi') {
+            // 1 Reconciled, 1 Mismatched
+            if (recordIndex % 2 === 0) {
+              isReconciled = true;
+              bankTxId = createBankTx(
+                grossAmount,
+                offsetDays,
+                `TRSP ${primaryClient.commercial_name?.toUpperCase()}`,
+                'client_operation',
+                billingCompanyId,
+                true
+              );
+            } else {
+              isReconciled = false;
+              createBankTx(
+                grossAmount - 50,
+                offsetDays,
+                `TRSP PARCIAL ${primaryClient.commercial_name?.toUpperCase()}`,
+                'client_operation',
+                billingCompanyId,
+                false
+              );
+            }
+          } else if (group.group_name === 'Tomas Bernal') {
+            // Perfect Reconciled
+            isReconciled = true;
+            bankTxId = createBankTx(
+              grossAmount,
+              offsetDays,
+              `SPEI FDO ${primaryClient.commercial_name?.toUpperCase()}`,
+              'client_operation',
+              billingCompanyId,
+              true
+            );
+          } else if (group.group_name === 'Favorito') {
+            // Perfect Reconciled (large amount)
+            isReconciled = true;
+            bankTxId = createBankTx(
+              grossAmount,
+              offsetDays,
+              `TRSP COMPLETO ${primaryClient.commercial_name?.toUpperCase()}`,
+              'client_operation',
+              billingCompanyId,
+              true
+            );
+          } else {
+            // Default fallback
+            isReconciled = false;
+          }
+
+          demoRecords.push({
+            id: crypto.randomUUID(),
+            client_id: primaryClient.id,
+            internal_company_id: billingCompanyId,
+            invoice_uuid: crypto.randomUUID(),
+            is_invoiced: br.is_invoiced,
+            virtual_bucket_label: 'virtual_bucket_label' in br ? br.virtual_bucket_label : null,
+            amount_gross: grossAmount,
+            amount_commission: commission,
+            amount_net_payroll: netPayroll,
+            entry_type: 'payroll_funding',
+            description: `Fondeo de Nómina - ${primaryClient.commercial_name}`,
+            operation_date: formatOffsetDate(offsetDays),
+            is_reconciled: isReconciled,
+            bank_transaction_id: bankTxId
+          });
+        }
       }
 
-      // 2. Mismatched Value Exception (Metales del Norte)
-      if (clientB) {
-        demoBankTxs.push({
-          id: crypto.randomUUID(),
-          internal_company_id: compAId,
-          amount: 210000.00,
-          transaction_date: formatOffsetDate(3),
-          description: 'ABONO NOMINA METALES NORTE',
-          reference_number: 'SPEI009281',
-          is_reconciled: false,
-          is_non_invoiced: false,
-          transaction_category: 'client_operation',
-          ingestion_source: 'daily_screenshot_assisted'
-        });
-        demoRecords.push({
-          id: crypto.randomUUID(),
-          client_id: clientB.id,
-          internal_company_id: compAId,
-          invoice_uuid: crypto.randomUUID(),
-          is_invoiced: true,
-          virtual_bucket_label: null,
-          amount_gross: 215000.00,
-          amount_commission: 8600.00,
-          amount_net_payroll: 206400.00,
-          entry_type: 'payroll_funding',
-          description: 'Fondeo de Nómina Blue Log Invoice',
-          operation_date: formatOffsetDate(3),
-          is_reconciled: false,
-          bank_transaction_id: null
-        });
+      // Add a few corporate opex & general bank transactions (outflows/inflows)
+      const mainCompId = insertedCompanies[0]?.id || '';
+      if (mainCompId) {
+        createBankTx(-12500.00, 4, 'COMISION MENSUAL BANCA ELECTRONICA', 'corporate_opex', mainCompId, false);
+        createBankTx(-35000.00, 5, 'PAGO RENTA OFICINAS CORP', 'corporate_opex', mainCompId, false);
+        createBankTx(-450000.00, 2, 'DISPERSION MASIVA NOMINA BATCH', 'client_operation', mainCompId, true);
+        createBankTx(8500.00, 8, 'RENDIMIENTOS INVERSION MOCK', 'corporate_opex', mainCompId, false);
       }
 
-      // 3. Missing Document Reference Exception (Tech Solutions Mexico)
-      if (clientC) {
-        demoBankTxs.push({
-          id: crypto.randomUUID(),
-          internal_company_id: compBId,
-          amount: 1200000.00,
-          transaction_date: formatOffsetDate(1),
-          description: 'SPEI COMPLETO TECH SOLUTIONS',
-          reference_number: 'SPEI553928',
-          is_reconciled: false,
-          is_non_invoiced: false,
-          transaction_category: 'client_operation',
-          ingestion_source: 'daily_screenshot_assisted'
-        });
-      }
-
-      // 4. Orphan Transaction Exception (System Fee)
-      demoBankTxs.push({
-        id: crypto.randomUUID(),
-        internal_company_id: compAId,
-        amount: -8500.00,
-        transaction_date: formatOffsetDate(4),
-        description: 'COMISION MENSUAL BANCA ELECTRONICA BBVA',
-        reference_number: 'COM-8822',
-        is_reconciled: false,
-        is_non_invoiced: false,
-        transaction_category: 'corporate_opex',
-        ingestion_source: 'daily_screenshot_assisted'
-      });
-
-      // 5. Orphan Transaction Exception (Withdrawal)
-      demoBankTxs.push({
-        id: crypto.randomUUID(),
-        internal_company_id: compAId,
-        amount: -15000.00,
-        transaction_date: formatOffsetDate(5),
-        description: 'RETIRO EFECTIVO CAJERO AUTOMATICO SUC 12',
-        reference_number: 'ATM-0091',
-        is_reconciled: false,
-        is_non_invoiced: false,
-        transaction_category: 'corporate_opex',
-        ingestion_source: 'daily_screenshot_assisted'
-      });
-
-      // 6. Auto-Scan Candidate (Software Express)
-      if (clientD) {
-        demoBankTxs.push({
-          id: crypto.randomUUID(),
-          internal_company_id: compBId,
-          amount: 450000.00,
-          transaction_date: formatOffsetDate(1),
-          description: 'FONDEO SEMANAL SOFTWARE EXPRESS',
-          reference_number: 'SPEI773612',
-          is_reconciled: false,
-          is_non_invoiced: false,
-          transaction_category: 'client_operation',
-          ingestion_source: 'daily_screenshot_assisted'
-        });
-        demoRecords.push({
-          id: crypto.randomUUID(),
-          client_id: clientD.id,
-          internal_company_id: compBId,
-          invoice_uuid: crypto.randomUUID(),
-          is_invoiced: true,
-          virtual_bucket_label: null,
-          amount_gross: 450000.00,
-          amount_commission: 22500.00,
-          amount_net_payroll: 427500.00,
-          entry_type: 'payroll_funding',
-          description: 'Fondeo de Nómina Semanal Software Express',
-          operation_date: formatOffsetDate(1),
-          is_reconciled: false,
-          bank_transaction_id: null
-        });
-      }
-
-      // 7. General Operational Transactions (Distribuidora Mayorista)
-      if (clientE) {
-        const txId5 = crypto.randomUUID();
-        demoBankTxs.push({
-          id: txId5,
-          internal_company_id: compAId,
-          amount: 800000.00,
-          transaction_date: formatOffsetDate(6),
-          description: 'FONDEO NOMINA DISTRIBUIDORA MAYORISTA',
-          reference_number: 'SPEI009212',
-          is_reconciled: true,
-          is_non_invoiced: false,
-          transaction_category: 'client_operation',
-          ingestion_source: 'daily_screenshot_assisted'
-        });
-        demoRecords.push({
-          id: crypto.randomUUID(),
-          client_id: clientE.id,
-          internal_company_id: compAId,
-          invoice_uuid: crypto.randomUUID(),
-          is_invoiced: true,
-          virtual_bucket_label: null,
-          amount_gross: 800000.00,
-          amount_commission: 24000.00,
-          amount_net_payroll: 776000.00,
-          entry_type: 'payroll_funding',
-          description: 'Fondeo de Nómina Distribuidora Invoiced',
-          operation_date: formatOffsetDate(6),
-          is_reconciled: true,
-          bank_transaction_id: txId5
-        });
-
-        // Add a payroll dispersal debit to match the outflow
-        demoBankTxs.push({
-          id: crypto.randomUUID(),
-          internal_company_id: compAId,
-          amount: -776000.00,
-          transaction_date: formatOffsetDate(6),
-          description: 'DISPERSION MASIVA NOMINA DISTRIBUIDORA BATCH',
-          reference_number: 'DISP000985',
-          is_reconciled: true,
-          is_non_invoiced: false,
-          transaction_category: 'client_operation',
-          ingestion_source: 'daily_screenshot_assisted'
-        });
-      }
-
+      // Insert bank transactions and billing records
       const { error: insBankErr } = await supabase.from('bank_transactions').insert(demoBankTxs);
       if (insBankErr) throw insBankErr;
 
       const { error: insRecErr } = await supabase.from('billing_records').insert(demoRecords);
       if (insRecErr) throw insRecErr;
+
+      // 6. Recouple current user's profile to the first internal company
+      if (user && insertedCompanies.length > 0) {
+        await supabase.from('profiles').update({ internal_company_id: insertedCompanies[0].id }).eq('id', user.id);
+      }
 
       alert('Datos de simulación cargados con éxito.');
       window.location.reload();
@@ -1064,9 +1099,15 @@ export const Dashboard = () => {
         <div className={styles.matrixContainer}>
           <div className={styles.matrixHeader}>
             <h4 className={styles.matrixTitle}>Interactive Invoicing &amp; Billing Matrix</h4>
-            <button className={styles.exportBtn} onClick={handleExportMatrixCSV}>
-              <Download size={14} className="mr-1" /> Exportar CSV
-            </button>
+            <div className={styles.matrixActions}>
+              <button className={styles.collapseBtn} onClick={handleToggleAllGroups}>
+                <ChevronsUpDown size={14} className="mr-1" />
+                {areAllCollapsed ? 'Expandir Todo' : 'Contraer Todo'}
+              </button>
+              <button className={styles.exportBtn} onClick={handleExportMatrixCSV}>
+                <Download size={14} className="mr-1" /> Exportar CSV
+              </button>
+            </div>
           </div>
           
           <div className={styles.matrixScroll}>

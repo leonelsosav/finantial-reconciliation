@@ -1,0 +1,113 @@
+{
+  "internal_companies": [
+    { "name": "ASECO", "tax_id": "ASE120405AA1" },
+    { "name": "CIONICA", "tax_id": "CIO150822BB2" },
+    { "name": "FULL", "tax_id": "FUL180911CC3" },
+    { "name": "MERCI", "tax_id": "MER200130DD4" },
+    { "name": "QUIROZ", "tax_id": "QUI111224EE5" },
+    { "name": "ZUÑIGA", "tax_id": "ZUN140315FF6" },
+    { "name": "HOME", "tax_id": "HOM170518GG7" },
+    { "name": "PTA REA", "tax_id": "PTA190601HH8" },
+    { "name": "Q.DISEÑO", "tax_id": "QDI210712II9" },
+    { "name": "SKYNEST", "tax_id": "SKY221105JJ0" },
+    { "name": "TRIFUSH", "tax_id": "TRI230228KK1" }
+  ],
+  "virtual_buckets": [
+    { "label": "SEIVON" },
+    { "label": "QUINTO PUEBLA" }
+  ],
+  "client_directory": [
+    {
+      "group_name": "Alberto Compean",
+      "subsidiaries": [
+        { "commercial_name": "Compean Logística", "legal_name": "Compean y Asociados S.A. de C.V.", "tax_id": "COM950101A10", "commission_percentage": 5.00, "retainer_balance": 15000.00 }
+      ],
+      "billing_records": [
+        { "internal_company": "FULL", "amount_gross": 130000.00, "is_invoiced": true }
+      ]
+    },
+    {
+      "group_name": "Jaguar",
+      "subsidiaries": [
+        { "commercial_name": "Jaguar Inmobiliaria", "legal_name": "Desarrollos Jaguar del Caribe S.A.", "tax_id": "JAG121120BB3", "commission_percentage": 4.50, "retainer_balance": 8500.00 }
+      ],
+      "billing_records": [
+        { "virtual_bucket_label": "SEIVON", "amount_gross": 6960.00, "is_invoiced": false }
+      ]
+    },
+    {
+      "group_name": "Carolina",
+      "subsidiaries": [
+        { "commercial_name": "Carolina Operadora", "legal_name": "Operadora de Hoteles Carolina S.A.", "tax_id": "OHC140512MK4", "commission_percentage": 6.00, "retainer_balance": 1240500.00 },
+        { "commercial_name": "Carolina Airbnb", "legal_name": "Servicios Turísticos Carolina S. de R.L.", "tax_id": "STC190824TR8", "commission_percentage": 4.50, "retainer_balance": 450000.00 }
+      ],
+      "billing_records": [
+        { "internal_company": "ASECO", "amount_gross": 85853.04, "is_invoiced": true },
+        { "internal_company": "FULL", "amount_gross": 130097.01, "is_invoiced": true },
+        { "internal_company": "QUIROZ", "amount_gross": 77521.32, "is_invoiced": true },
+        { "internal_company": "ZUÑIGA", "amount_gross": 31216.33, "is_invoiced": true },
+        { "internal_company": "SKYNEST", "amount_gross": 39751.50, "is_invoiced": true },
+        { "internal_company": "TRIFUSH", "amount_gross": 22409.90, "is_invoiced": true }
+      ]
+    },
+    {
+      "group_name": "Leonel",
+      "subsidiaries": [
+        { "commercial_name": "Leonel FinTech", "legal_name": "Tecnologías de Conciliación Digital S.A.", "tax_id": "TCD240101LN3", "commission_percentage": 3.50, "retainer_balance": 0.00 }
+      ],
+      "billing_records": [
+        { "internal_company": "TRIFUSH", "amount_gross": 15000.00, "is_invoiced": true }
+      ]
+    },
+    {
+      "group_name": "Daniel Castillo",
+      "subsidiaries": [
+        { "commercial_name": "Castillo Constructores", "legal_name": "Constructora e Inmobiliaria Castillo S.A.", "tax_id": "CIC080419D44", "commission_percentage": 5.50, "retainer_balance": 32000.00 }
+      ],
+      "billing_records": [
+        { "internal_company": "FULL", "amount_gross": 15525.00, "is_invoiced": true }
+      ]
+    },
+    {
+      "group_name": "Elias",
+      "subsidiaries": [
+        { "commercial_name": "Elias Comercializadora", "legal_name": "Comercializadora de la Riviera S.A.", "tax_id": "CRI151005EL9", "commission_percentage": 7.50, "retainer_balance": 215480.01 },
+        { "commercial_name": "Elias Bienes Raíces", "legal_name": "Elias Real Estate Operations S. de R.L.", "tax_id": "ERE1812019A2", "commission_percentage": 5.00, "retainer_balance": 98000.00 }
+      ],
+      "billing_records": [
+        { "internal_company": "ASECO", "amount_gross": 94397.00, "is_invoiced": true },
+        { "internal_company": "MERCI", "amount_gross": 50517.95, "is_invoiced": true },
+        { "internal_company": "QUIROZ", "amount_gross": 29447.01, "is_invoiced": true },
+        { "internal_company": "ZUÑIGA", "amount_gross": 17614.31, "is_invoiced": true }
+      ]
+    },
+    {
+      "group_name": "Arc patatuchi",
+      "subsidiaries": [
+        { "commercial_name": "Patatuchi Arquitectos", "legal_name": "Diseño y Arquitectura Patatuchi S.A.", "tax_id": "DAP110309PA8", "commission_percentage": 5.00, "retainer_balance": 224327.23 }
+      ],
+      "billing_records": [
+        { "internal_company": "HOME", "amount_gross": 17164.82, "is_invoiced": true },
+        { "internal_company": "PTA REA", "amount_gross": 211752.41, "is_invoiced": true }
+      ]
+    },
+    {
+      "group_name": "Tomas Bernal",
+      "subsidiaries": [
+        { "commercial_name": "Bernal Distribuciones", "legal_name": "Distribuidora Comercial Bernal S.A.", "tax_id": "DCB130922TB1", "commission_percentage": 4.00, "retainer_balance": 55000.00 }
+      ],
+      "billing_records": [
+        { "internal_company": "ASECO", "amount_gross": 17129.23, "is_invoiced": true }
+      ]
+    },
+    {
+      "group_name": "Favorito",
+      "subsidiaries": [
+        { "commercial_name": "Favorito Comercial", "legal_name": "Grupo Comercial Favorito S.A. de C.V.", "tax_id": "GCF160714FA3", "commission_percentage": 6.50, "retainer_balance": 140000.00 }
+      ],
+      "billing_records": [
+        { "virtual_bucket_label": "SEIVON", "amount_gross": 3221444.32, "is_invoiced": false }
+      ]
+    }
+  ]
+}
