@@ -256,14 +256,31 @@ export const Vault = () => {
 
     setIsDeleting(true);
     try {
-      const { error } = await supabase
+      // 1. Delete billing records
+      const { error: billingErr } = await supabase
         .from('billing_records')
         .delete()
         .neq('id', '00000000-0000-0000-0000-000000000000');
       
-      if (error) throw error;
+      if (billingErr) throw billingErr;
 
-      alert('Todos los registros de la bóveda fueron eliminados con éxito.');
+      // 2. Delete bank transactions
+      const { error: bankErr } = await supabase
+        .from('bank_transactions')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+      
+      if (bankErr) throw bankErr;
+
+      // 3. Reset client cushion balances to 0
+      const { error: clientErr } = await supabase
+        .from('clients')
+        .update({ retainer_balance: 0 })
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+
+      if (clientErr) throw clientErr;
+
+      alert('Todos los registros de la bóveda, movimientos bancarios y saldos de clientes fueron eliminados con éxito.');
       
       setSessionQueueCount(0);
       setSessionErrorsCount(0);

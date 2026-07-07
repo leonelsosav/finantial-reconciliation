@@ -135,6 +135,20 @@ export const Dashboard = () => {
     return bankTxs.filter(tx => tx.transaction_date >= startStr && tx.transaction_date <= todayStr);
   }, [bankTxs, timeframe, todayStr]);
 
+  // Dynamic client provisions: Calculate balance based on reconciled billing records in the DB.
+  // If there are no reconciled billing records at all in the database, all client balances default to 0.00.
+  // Otherwise, a client's balance is the sum of the gross amount of their reconciled billing records.
+  const processedClients = useMemo(() => {
+    return clients.map(client => {
+      const clientRecords = billingRecords.filter(br => br.client_id === client.id);
+      const dynamicBalance = clientRecords.reduce((sum, r) => r.is_reconciled ? sum + Number(r.amount_gross || 0) : sum, 0);
+      return {
+        ...client,
+        retainer_balance: dynamicBalance
+      };
+    });
+  }, [clients, billingRecords]);
+
   // Aggregate stats using financials hook
   const {
     consolidatedTreasury,
@@ -142,7 +156,7 @@ export const Dashboard = () => {
     activeEscrow,
     unreconciledInvoicesCount,
     unreconciledBankTxsCount
-  } = useFinancials(filteredBillingRecords, filteredBankTxs, clients);
+  } = useFinancials(filteredBillingRecords, filteredBankTxs, processedClients);
 
   const unreconciledCount = unreconciledInvoicesCount + unreconciledBankTxsCount;
 
@@ -258,7 +272,7 @@ export const Dashboard = () => {
   // Interactive Invoicing & Billing Matrix calculations
   const matrixData = useMemo(() => {
     const groups = clientGroups.map(group => {
-      const groupClients = clients.filter(c => c.client_group_id === group.id);
+      const groupClients = processedClients.filter(c => c.client_group_id === group.id);
       
       const clientsData = groupClients.map(client => {
         const colValues: Record<string, number> = {};
@@ -307,7 +321,7 @@ export const Dashboard = () => {
     });
     
     // Group clients with no parent group
-    const ungroupedClients = clients.filter(c => !c.client_group_id);
+    const ungroupedClients = processedClients.filter(c => !c.client_group_id);
     if (ungroupedClients.length > 0) {
       const clientsData = ungroupedClients.map(client => {
         const colValues: Record<string, number> = {};
@@ -356,7 +370,7 @@ export const Dashboard = () => {
     }
     
     return groups;
-  }, [clientGroups, clients, matrixColumns, filteredBillingRecords]);
+  }, [clientGroups, processedClients, matrixColumns, filteredBillingRecords]);
 
   // Calculate DIFERENCIA delta row
   const matrixTotals = useMemo(() => {
@@ -619,10 +633,9 @@ export const Dashboard = () => {
         groupClientsMap.set(group.group_name, groupSubs);
       }
 
-      const { data: insertedClients, error: clientErr } = await supabase
+      const { error: clientErr } = await supabase
         .from('clients')
-        .insert(clientsToInsert)
-        .select();
+        .insert(clientsToInsert);
       if (clientErr) throw clientErr;
 
       const formatOffsetDate = (offsetDays: number) => {
@@ -1060,10 +1073,10 @@ export const Dashboard = () => {
           <div className={styles.healthList}>
             {isLoading ? (
               <p className={styles.loadingText}>Cargando provisiones...</p>
-            ) : clients.length === 0 ? (
+            ) : processedClients.length === 0 ? (
               <p className={styles.emptyText}>No hay datos de clientes.</p>
             ) : (
-              clients.slice(0, 4).map((client) => {
+              processedClients.slice(0, 4).map((client) => {
                 const limit = 1000000;
                 const pct = Math.min(Math.round(((client.retainer_balance || 0) / limit) * 100), 100);
                 
@@ -1270,7 +1283,7 @@ export const Dashboard = () => {
               ) : (
                 <div className={styles.clientList}>
                   <p className={styles.subText}>Seleccione una entidad para modificar sus coeficientes y saldos.</p>
-                  {clients.map(c => (
+                  {processedClients.map(c => (
                     <div key={c.id} className={styles.clientItem} onClick={() => handleOpenDrawer(c)}>
                       <div className={styles.clientInfo}>
                         <strong>{c.commercial_name || c.name}</strong>
