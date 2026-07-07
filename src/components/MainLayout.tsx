@@ -13,7 +13,8 @@ import {
   Building2, 
   User, 
   Plus,
-  CloudUpload
+  CloudUpload,
+  Users
 } from 'lucide-react';
 import styles from './MainLayout.module.scss';
 
@@ -91,6 +92,16 @@ export const MainLayout = () => {
             <LayoutDashboard size={18} />
             <span>Dashboard</span>
           </NavLink>
+          
+          {profile?.role === 'owner' && (
+            <NavLink 
+              to="/clients" 
+              className={({ isActive }) => `${styles.navItem} ${isActive ? styles.active : ''}`}
+            >
+              <Users size={18} />
+              <span>Clientes</span>
+            </NavLink>
+          )}
 
           {(profile?.role === 'owner' || profile?.role === 'auditor') && (
             <NavLink 

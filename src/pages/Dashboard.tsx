@@ -501,12 +501,14 @@ export const Dashboard = () => {
 
   // Demo data handlers
   const handleResetDemoData = async () => {
-    if (!window.confirm('¿Está seguro de que desea restablecer los datos de demostración? Esto eliminará todos los registros y transacciones bancarias.')) {
+    if (!window.confirm('¿Está seguro de que desea restablecer los datos de demostración? Esto eliminará de forma permanente todos los registros contables, transacciones bancarias, clientes y grupos de clientes de la base de datos.')) {
       return;
     }
     try {
+      // Delete in correct order to respect foreign key constraints
       await supabase.from('billing_records').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       await supabase.from('bank_transactions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('clients').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       await supabase.from('client_groups').delete().neq('id', '00000000-0000-0000-0000-000000000000');
 
       alert('Datos de simulación borrados con éxito.');
@@ -518,38 +520,104 @@ export const Dashboard = () => {
   };
 
   const handleLoadDemoData = async () => {
-    if (companies.length === 0 || clients.length === 0) {
-      alert('Cargando entidades y clientes. Por favor intente de nuevo.');
-      return;
-    }
-
     try {
+      // 0. Ensure internal companies exist. If not, seed them first.
+      let activeCompanies = [...companies];
+      if (activeCompanies.length === 0) {
+        const { data: newCompanies, error: compErr } = await supabase.from('internal_companies').insert([
+          { name: 'Kardex Finanzas S.A. de C.V.', tax_id: 'KAR990812AA1' },
+          { name: 'Operadora de Nóminas Alfa', tax_id: 'ONA041218BB2' }
+        ]).select();
+        if (compErr) throw compErr;
+        activeCompanies = newCompanies || [];
+      }
+
+      const compAId = activeCompanies[0]?.id;
+      const compBId = activeCompanies[1]?.id || compAId;
+
+      if (!compAId) {
+        alert('Error: No se pudo obtener o crear una empresa interna para asociar.');
+        return;
+      }
+
+      // 1. Clean up existing records in cascading order to respect foreign key constraints
       await supabase.from('billing_records').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       await supabase.from('bank_transactions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('clients').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       await supabase.from('client_groups').delete().neq('id', '00000000-0000-0000-0000-000000000000');
 
+      // 2. Insert Client Groups
       const { data: grpData, error: grpError } = await supabase.from('client_groups').insert([
-        { group_name: 'Grupo Industrial' },
-        { group_name: 'Servicios Globales' },
-        { group_name: 'Consorcio Norte' }
+        { group_name: 'Grupo Industrial Aceros' },
+        { group_name: 'Consorcio Tecnológico' },
+        { group_name: 'Corporativo Retail' }
       ]).select();
       if (grpError) throw grpError;
 
-      const gIndId = grpData.find(g => g.group_name === 'Grupo Industrial')?.id;
-      const gGlobId = grpData.find(g => g.group_name === 'Servicios Globales')?.id;
-      const gNortId = grpData.find(g => g.group_name === 'Consorcio Norte')?.id;
+      const gIndId = grpData.find(g => g.group_name === 'Grupo Industrial Aceros')?.id;
+      const gTechId = grpData.find(g => g.group_name === 'Consorcio Tecnológico')?.id;
+      const gRetailId = grpData.find(g => g.group_name === 'Corporativo Retail')?.id;
 
-      const clientA = clients[0];
-      const clientB = clients[1];
-      const clientC = clients[2];
-      const clientD = clients[3];
-      const clientE = clients[4];
+      // 3. Insert Clients linked to groups and companies
+      const { data: clientData, error: clientErr } = await supabase.from('clients').insert([
+        { 
+          name: 'Aceros del Bajío S.A. de C.V.',
+          commercial_name: 'Aceros del Bajío',
+          legal_name: 'Aceros del Bajío S.A. de C.V.',
+          tax_id: 'ABA920801TR3',
+          commission_percentage: 4,
+          retainer_balance: 1250000,
+          client_group_id: gIndId || null,
+          internal_company_id: compAId
+        },
+        { 
+          name: 'Metales del Norte S.A. de C.V.',
+          commercial_name: 'Metales del Norte',
+          legal_name: 'Metales del Norte S.A. de C.V.',
+          tax_id: 'MNO951110HR4',
+          commission_percentage: 4,
+          retainer_balance: 450000,
+          client_group_id: gIndId || null,
+          internal_company_id: compAId
+        },
+        { 
+          name: 'Tech Solutions Mexico S. de R.L.',
+          commercial_name: 'Tech Solutions',
+          legal_name: 'Tech Solutions Mexico S. de R.L. de C.V.',
+          tax_id: 'TSM080220LA5',
+          commission_percentage: 6,
+          retainer_balance: 3200000,
+          client_group_id: gTechId || null,
+          internal_company_id: compBId
+        },
+        { 
+          name: 'Software Express S.A.',
+          commercial_name: 'Software Express',
+          legal_name: 'Software Express S.A. de C.V.',
+          tax_id: 'SEX120405PP6',
+          commission_percentage: 5,
+          retainer_balance: 850000,
+          client_group_id: gTechId || null,
+          internal_company_id: compBId
+        },
+        { 
+          name: 'Distribuidora Mayorista S.A.',
+          commercial_name: 'Distribuidora Mayorista',
+          legal_name: 'Distribuidora Mayorista S.A. de C.V.',
+          tax_id: 'DMA020909UU7',
+          commission_percentage: 3,
+          retainer_balance: 2100000,
+          client_group_id: gRetailId || null,
+          internal_company_id: compAId
+        }
+      ]).select();
+      if (clientErr) throw clientErr;
 
-      if (clientA) await supabase.from('clients').update({ client_group_id: gIndId, retainer_balance: 1240500, commission_percentage: 5 }).eq('id', clientA.id);
-      if (clientB) await supabase.from('clients').update({ client_group_id: gIndId, retainer_balance: 450000, commission_percentage: 5 }).eq('id', clientB.id);
-      if (clientC) await supabase.from('clients').update({ client_group_id: gGlobId, retainer_balance: 8900000, commission_percentage: 6 }).eq('id', clientC.id);
-      if (clientD) await supabase.from('clients').update({ client_group_id: gGlobId, retainer_balance: 4120000, commission_percentage: 6 }).eq('id', clientD.id);
-      if (clientE) await supabase.from('clients').update({ client_group_id: gNortId, retainer_balance: 2530000, commission_percentage: 4 }).eq('id', clientE.id);
+      const clientA = clientData.find(c => c.name === 'Aceros del Bajío S.A. de C.V.');
+      const clientB = clientData.find(c => c.name === 'Metales del Norte S.A. de C.V.');
+      const clientC = clientData.find(c => c.name === 'Tech Solutions Mexico S. de R.L.');
+      const clientD = clientData.find(c => c.name === 'Software Express S.A.');
+      const clientE = clientData.find(c => c.name === 'Distribuidora Mayorista S.A.');
 
       const formatOffsetDate = (offsetDays: number) => {
         const d = new Date();
@@ -560,18 +628,16 @@ export const Dashboard = () => {
       const demoRecords = [];
       const demoBankTxs = [];
 
-      const compAId = companies[0]?.id;
-      const compBId = companies[1]?.id;
-
-      if (clientA && compAId) {
+      // 1. Perfect Reconciled Flow (Aceros del Bajío)
+      if (clientA) {
         const txId1 = crypto.randomUUID();
         demoBankTxs.push({
           id: txId1,
           internal_company_id: compAId,
-          amount: 450000.00,
-          transaction_date: formatOffsetDate(10),
-          description: `DEPOSITO DE RESERVA NOMINA - ${clientA.name.toUpperCase()}`,
-          reference_number: 'SPEI0012921',
+          amount: 580000.00,
+          transaction_date: formatOffsetDate(2),
+          description: 'TRSP SPEI NOMINA ACEROS BAJIO',
+          reference_number: 'SPEI8827391',
           is_reconciled: true,
           is_non_invoiced: false,
           transaction_category: 'client_operation',
@@ -584,18 +650,31 @@ export const Dashboard = () => {
           invoice_uuid: crypto.randomUUID(),
           is_invoiced: true,
           virtual_bucket_label: null,
-          amount_gross: 450000.00,
-          amount_commission: 22500.00,
-          amount_net_payroll: 427500.00,
+          amount_gross: 580000.00,
+          amount_commission: 23200.00,
+          amount_net_payroll: 556800.00,
           entry_type: 'payroll_funding',
           description: 'Fondeo de Nómina Quincenal Invoiced',
-          operation_date: formatOffsetDate(10),
+          operation_date: formatOffsetDate(2),
           is_reconciled: true,
           bank_transaction_id: txId1
         });
       }
 
-      if (clientB && compAId) {
+      // 2. Mismatched Value Exception (Metales del Norte)
+      if (clientB) {
+        demoBankTxs.push({
+          id: crypto.randomUUID(),
+          internal_company_id: compAId,
+          amount: 210000.00,
+          transaction_date: formatOffsetDate(3),
+          description: 'ABONO NOMINA METALES NORTE',
+          reference_number: 'SPEI009281',
+          is_reconciled: false,
+          is_non_invoiced: false,
+          transaction_category: 'client_operation',
+          ingestion_source: 'daily_screenshot_assisted'
+        });
         demoRecords.push({
           id: crypto.randomUUID(),
           client_id: clientB.id,
@@ -603,23 +682,26 @@ export const Dashboard = () => {
           invoice_uuid: crypto.randomUUID(),
           is_invoiced: true,
           virtual_bucket_label: null,
-          amount_gross: 120000.00,
-          amount_commission: 6000.00,
-          amount_net_payroll: 114000.00,
+          amount_gross: 215000.00,
+          amount_commission: 8600.00,
+          amount_net_payroll: 206400.00,
           entry_type: 'payroll_funding',
           description: 'Fondeo de Nómina Blue Log Invoice',
-          operation_date: formatOffsetDate(8),
+          operation_date: formatOffsetDate(3),
           is_reconciled: false,
           bank_transaction_id: null
         });
+      }
 
+      // 3. Missing Document Reference Exception (Tech Solutions Mexico)
+      if (clientC) {
         demoBankTxs.push({
           id: crypto.randomUUID(),
-          internal_company_id: compAId,
-          amount: 115000.00,
-          transaction_date: formatOffsetDate(8),
-          description: 'SPEI RECIBIDO BLUE OCEAN LOG',
-          reference_number: 'SPEI9988221',
+          internal_company_id: compBId,
+          amount: 1200000.00,
+          transaction_date: formatOffsetDate(1),
+          description: 'SPEI COMPLETO TECH SOLUTIONS',
+          reference_number: 'SPEI553928',
           is_reconciled: false,
           is_non_invoiced: false,
           transaction_category: 'client_operation',
@@ -627,91 +709,109 @@ export const Dashboard = () => {
         });
       }
 
-      if (clientC && compBId) {
-        const txId3 = crypto.randomUUID();
+      // 4. Orphan Transaction Exception (System Fee)
+      demoBankTxs.push({
+        id: crypto.randomUUID(),
+        internal_company_id: compAId,
+        amount: -8500.00,
+        transaction_date: formatOffsetDate(4),
+        description: 'COMISION MENSUAL BANCA ELECTRONICA BBVA',
+        reference_number: 'COM-8822',
+        is_reconciled: false,
+        is_non_invoiced: false,
+        transaction_category: 'corporate_opex',
+        ingestion_source: 'daily_screenshot_assisted'
+      });
+
+      // 5. Orphan Transaction Exception (Withdrawal)
+      demoBankTxs.push({
+        id: crypto.randomUUID(),
+        internal_company_id: compAId,
+        amount: -15000.00,
+        transaction_date: formatOffsetDate(5),
+        description: 'RETIRO EFECTIVO CAJERO AUTOMATICO SUC 12',
+        reference_number: 'ATM-0091',
+        is_reconciled: false,
+        is_non_invoiced: false,
+        transaction_category: 'corporate_opex',
+        ingestion_source: 'daily_screenshot_assisted'
+      });
+
+      // 6. Auto-Scan Candidate (Software Express)
+      if (clientD) {
         demoBankTxs.push({
-          id: txId3,
+          id: crypto.randomUUID(),
           internal_company_id: compBId,
-          amount: 200000.00,
-          transaction_date: formatOffsetDate(5),
-          description: 'TRANSFERENCIA SEIVON NOMINA',
-          reference_number: 'SPEI7766554',
-          is_reconciled: true,
-          is_non_invoiced: true,
+          amount: 450000.00,
+          transaction_date: formatOffsetDate(1),
+          description: 'FONDEO SEMANAL SOFTWARE EXPRESS',
+          reference_number: 'SPEI773612',
+          is_reconciled: false,
+          is_non_invoiced: false,
           transaction_category: 'client_operation',
           ingestion_source: 'daily_screenshot_assisted'
         });
         demoRecords.push({
           id: crypto.randomUUID(),
-          client_id: clientC.id,
+          client_id: clientD.id,
           internal_company_id: compBId,
-          invoice_uuid: null,
-          is_invoiced: false,
-          virtual_bucket_label: 'SEIVON',
-          amount_gross: 200000.00,
-          amount_commission: 0.00,
-          amount_net_payroll: 200000.00,
+          invoice_uuid: crypto.randomUUID(),
+          is_invoiced: true,
+          virtual_bucket_label: null,
+          amount_gross: 450000.00,
+          amount_commission: 22500.00,
+          amount_net_payroll: 427500.00,
           entry_type: 'payroll_funding',
-          description: 'Fondeo Virtual Seivon sin Factura',
-          operation_date: formatOffsetDate(5),
-          is_reconciled: true,
-          bank_transaction_id: txId3
+          description: 'Fondeo de Nómina Semanal Software Express',
+          operation_date: formatOffsetDate(1),
+          is_reconciled: false,
+          bank_transaction_id: null
         });
       }
 
-      if (compAId) {
+      // 7. General Operational Transactions (Distribuidora Mayorista)
+      if (clientE) {
+        const txId5 = crypto.randomUUID();
         demoBankTxs.push({
-          id: crypto.randomUUID(),
+          id: txId5,
           internal_company_id: compAId,
-          amount: -320000.00,
-          transaction_date: formatOffsetDate(4),
-          description: 'DISPERSION NOMINA COLABORADORES BATCH',
-          reference_number: 'DISP000982',
+          amount: 800000.00,
+          transaction_date: formatOffsetDate(6),
+          description: 'FONDEO NOMINA DISTRIBUIDORA MAYORISTA',
+          reference_number: 'SPEI009212',
           is_reconciled: true,
           is_non_invoiced: false,
           transaction_category: 'client_operation',
           ingestion_source: 'daily_screenshot_assisted'
         });
-      }
-
-      if (compBId) {
-        demoBankTxs.push({
+        demoRecords.push({
           id: crypto.randomUUID(),
-          internal_company_id: compBId,
-          amount: -180000.00,
-          transaction_date: formatOffsetDate(3),
-          description: 'DISPERSION NOMINA SEIVON BATCH',
-          reference_number: 'DISP000983',
+          client_id: clientE.id,
+          internal_company_id: compAId,
+          invoice_uuid: crypto.randomUUID(),
+          is_invoiced: true,
+          virtual_bucket_label: null,
+          amount_gross: 800000.00,
+          amount_commission: 24000.00,
+          amount_net_payroll: 776000.00,
+          entry_type: 'payroll_funding',
+          description: 'Fondeo de Nómina Distribuidora Invoiced',
+          operation_date: formatOffsetDate(6),
           is_reconciled: true,
-          is_non_invoiced: true,
-          transaction_category: 'client_operation',
-          ingestion_source: 'daily_screenshot_assisted'
+          bank_transaction_id: txId5
         });
-      }
 
-      if (compAId && compBId) {
+        // Add a payroll dispersal debit to match the outflow
         demoBankTxs.push({
           id: crypto.randomUUID(),
           internal_company_id: compAId,
-          amount: -50000.00,
-          transaction_date: formatOffsetDate(2),
-          description: 'TRASPASO DE FONDOS INTERCOMPAÑIA',
-          reference_number: 'INT-998822',
+          amount: -776000.00,
+          transaction_date: formatOffsetDate(6),
+          description: 'DISPERSION MASIVA NOMINA DISTRIBUIDORA BATCH',
+          reference_number: 'DISP000985',
           is_reconciled: true,
           is_non_invoiced: false,
-          transaction_category: 'internal_transfer',
-          ingestion_source: 'daily_screenshot_assisted'
-        });
-        demoBankTxs.push({
-          id: crypto.randomUUID(),
-          internal_company_id: compBId,
-          amount: 50000.00,
-          transaction_date: formatOffsetDate(2),
-          description: 'RECEPCION TRASPASO INTERCOMPAÑIA',
-          reference_number: 'INT-998823',
-          is_reconciled: true,
-          is_non_invoiced: false,
-          transaction_category: 'internal_transfer',
+          transaction_category: 'client_operation',
           ingestion_source: 'daily_screenshot_assisted'
         });
       }
