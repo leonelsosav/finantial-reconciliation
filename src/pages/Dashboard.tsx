@@ -137,11 +137,14 @@ export const Dashboard = () => {
 
   // Dynamic client provisions: Calculate balance based on reconciled billing records in the DB.
   // If there are no reconciled billing records at all in the database, all client balances default to 0.00.
-  // Otherwise, a client's balance is the sum of the gross amount of their reconciled billing records.
+  // Otherwise, a client's balance is the sum of the gross amount of their reconciled billing records of type 'retainer_injection' (safety cushion).
+  // Pass-through payroll funding records are excluded as they are disbursed to employees.
   const processedClients = useMemo(() => {
     return clients.map(client => {
       const clientRecords = billingRecords.filter(br => br.client_id === client.id);
-      const dynamicBalance = clientRecords.reduce((sum, r) => r.is_reconciled ? sum + Number(r.amount_gross || 0) : sum, 0);
+      const dynamicBalance = clientRecords.reduce((sum, r) => 
+        (r.is_reconciled && r.entry_type === 'retainer_injection') ? sum + Number(r.amount_gross || 0) : sum, 0
+      );
       return {
         ...client,
         retainer_balance: dynamicBalance
@@ -154,11 +157,8 @@ export const Dashboard = () => {
     consolidatedTreasury,
     netUtility,
     activeEscrow,
-    unreconciledInvoicesCount,
     unreconciledBankTxsCount
   } = useFinancials(filteredBillingRecords, filteredBankTxs, processedClients);
-
-  const unreconciledCount = unreconciledInvoicesCount + unreconciledBankTxsCount;
 
   // Chart timeline builder: Outflow vs Inflow (30D Timeline)
   const chartDays = useMemo(() => {
@@ -991,7 +991,7 @@ export const Dashboard = () => {
           </div>
           <div className={styles.cardContent}>
             <h2 className={styles.cardValue}>
-              {isLoading ? '...' : unreconciledCount}
+              {isLoading ? '...' : unreconciledBankTxsCount}
             </h2>
             <span className={`${styles.cardBadge} ${styles.badgeDanger}`}>REVISIÓN</span>
           </div>

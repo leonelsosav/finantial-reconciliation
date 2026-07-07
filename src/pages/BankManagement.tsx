@@ -4,7 +4,9 @@ import { useAuth } from '../hooks/useAuth';
 import { useDatabase } from '../hooks/useDatabase';
 import { supabase } from '../lib/supabase';
 import { DateEngine } from '../utils/DateEngine';
-import type { BankTransaction, InternalCompany } from '../types';
+import type { BankTransaction, InternalCompany, Client } from '../types';
+import { PredictionService } from '../services/prediction.service';
+import { ReconciliationService } from '../services/reconciliation.service';
 import { 
   Upload, 
   Lock, 
@@ -28,6 +30,7 @@ interface ParsedTransaction {
   reference: string;
   amount: number;
   lowConfidence: boolean;
+  client_id?: string;
 }
 
 export const BankManagement = () => {
@@ -39,6 +42,7 @@ export const BankManagement = () => {
 
   // Supabase hooks
   const { data: companies, fetchData: fetchCompanies } = useDatabase<InternalCompany>('internal_companies');
+  const { data: clients = [], fetchData: fetchClients } = useDatabase<Client>('clients');
   const { data: transactions, loading, fetchData: fetchTransactions, updateRecord, deleteRecord } = useDatabase<BankTransaction>('bank_transactions');
 
   // Account / Company filter context
@@ -66,11 +70,12 @@ export const BankManagement = () => {
   const [ledgerPage, setLedgerPage] = useState<number>(1);
   const itemsPerPage = 8;
 
-  // Fetch companies initially
+  // Fetch companies and clients initially
   useEffect(() => {
     if (!isAuthorized) return;
     fetchCompanies();
-  }, [isAuthorized, fetchCompanies]);
+    fetchClients();
+  }, [isAuthorized, fetchCompanies, fetchClients]);
 
   // Set default company select context
   useEffect(() => {
@@ -162,7 +167,7 @@ export const BankManagement = () => {
 
     // Progress simulation
     let currentProgress = 0;
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       currentProgress += 10;
       setProcessingProgress(currentProgress);
       if (currentProgress >= 100) {
@@ -191,14 +196,6 @@ export const BankManagement = () => {
             lowConfidence: false
           },
           {
-            id: '2',
-            date: formattedDate,
-            description: 'HONORARIOS GESTION NOMINA 5%',
-            reference: 'FEE-7721',
-            amount: -5000.00,
-            lowConfidence: true
-          },
-          {
             id: '3',
             date: formattedDate,
             description: 'RETIRO EFECTIVO CAJERO AUTOMATICO',
@@ -223,16 +220,46 @@ export const BankManagement = () => {
             lowConfidence: false
           },
           {
-            id: '6',
+            id: '7',
             date: formattedDate,
-            description: 'HONORARIOS GESTION NOMINA 5%',
-            reference: 'FEE-1500',
-            amount: -1500.00,
-            lowConfidence: true
+            description: 'PAGO DE NOMINA SPEI',
+            reference: `SPEI-${Math.floor(10000 + Math.random() * 90000)}`,
+            amount: -118750.00,
+            lowConfidence: false
+          },
+          {
+            id: '8',
+            date: formattedDate,
+            description: 'PAGO DE NOMINA SPEI',
+            reference: `SPEI-${Math.floor(10000 + Math.random() * 90000)}`,
+            amount: -68780.00,
+            lowConfidence: false
+          },
+          {
+            id: '9',
+            date: formattedDate,
+            description: 'PAGO DE NOMINA SPEI',
+            reference: `SPEI-${Math.floor(10000 + Math.random() * 90000)}`,
+            amount: -42940.00,
+            lowConfidence: false
           }
         ];
         
-        setParsedBatch(mockBatch);
+        try {
+          const enrichedBatch = await Promise.all(
+            mockBatch.map(async (row) => {
+              const prediction = await PredictionService.predictClientFromDescription(row.description, row.amount);
+              return {
+                ...row,
+                client_id: prediction?.client_id || ''
+              };
+            })
+          );
+          setParsedBatch(enrichedBatch);
+        } catch (err) {
+          console.error('[BankManagement] Prediction failed, using fallback', err);
+          setParsedBatch(mockBatch);
+        }
         setIsProcessing(false);
       }
     }, 150);
@@ -309,10 +336,25 @@ export const BankManagement = () => {
       }));
 
       // Insert batch to Supabase
-      const { error } = await supabase.from('bank_transactions').insert(payload);
+      const { data: insertedData, error } = await supabase
+        .from('bank_transactions')
+        .insert(payload)
+        .select('*');
+
       if (error) throw error;
 
-      alert(`Se han ingestado ${parsedBatch.length} registros bancarios exitosamente.`);
+      // Run reconciliation service for each inserted transaction passing client_id from the UI state
+      if (insertedData && insertedData.length > 0) {
+        for (let i = 0; i < insertedData.length; i++) {
+          const tx = insertedData[i];
+          const originalRow = parsedBatch[i];
+          if (originalRow && originalRow.client_id) {
+            await ReconciliationService.processReconciliationEvent(tx.id, 'bank_transaction', originalRow.client_id);
+          }
+        }
+      }
+
+      alert(`Se han ingestado y procesado ${parsedBatch.length} registros bancarios exitosamente.`);
       
       // Clean workspace
       setParsedBatch([]);
@@ -526,6 +568,7 @@ export const BankManagement = () => {
                     <th style={{ width: '120px' }}>Fecha</th>
                     <th>Descripción</th>
                     <th style={{ width: '140px' }}>Referencia</th>
+                    <th style={{ width: '180px' }}>Cliente Predicho / Asignado</th>
                     <th style={{ width: '130px' }} className={styles.alignRight}>Monto</th>
                   </tr>
                 </thead>
@@ -543,6 +586,27 @@ export const BankManagement = () => {
                       <td>{row.description}</td>
                       <td>
                         <span className={styles.monoText}>{row.reference}</span>
+                      </td>
+                      <td>
+                        <select
+                          className={styles.clientSelect}
+                          value={row.client_id || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setParsedBatch(prev =>
+                              prev.map(item =>
+                                item.id === row.id ? { ...item, client_id: val } : item
+                              )
+                            );
+                          }}
+                        >
+                          <option value="">-- No asignado (Opex/Excepción) --</option>
+                          {clients.map(c => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </select>
                       </td>
                       <td className={`${styles.alignRight} ${row.amount >= 0 ? styles.positiveText : styles.negativeText} ${styles.monoText}`}>
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
