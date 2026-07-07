@@ -15,7 +15,7 @@
 
   .wallCard {
     background: #ffffff;
-    border: 1px border-outline-variant;
+    border: 1px solid #cbd5e1;
     border-radius: 12px;
     padding: 40px;
     max-width: 480px;
@@ -85,7 +85,7 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  margin-bottom: 32px;
+  margin-bottom: 24px;
 
   @media (max-width: 768px) {
     flex-direction: column;
@@ -154,6 +154,45 @@
   }
 }
 
+// Tab Selector Bar
+.tabSelectorBar {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid #e2e8f0;
+  margin-bottom: 24px;
+
+  .tabBtn {
+    background: none;
+    border: none;
+    padding: 12px 16px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #64748b;
+    cursor: pointer;
+    position: relative;
+    letter-spacing: 0.05em;
+    transition: color 0.2s;
+
+    &:hover {
+      color: #0f172a;
+    }
+
+    &.active {
+      color: #0f172a;
+
+      &::after {
+        content: '';
+        position: absolute;
+        bottom: -1px;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: #0f172a;
+      }
+    }
+  }
+}
+
 // Bento Grid Stats
 .statsGrid {
   display: grid;
@@ -200,7 +239,19 @@
       margin: 0;
 
       &.warning {
-        color: #904a47;
+        color: #ef4444;
+      }
+
+      .urgencyLabel {
+        font-size: 10px;
+        font-weight: 700;
+        background: #fef2f2;
+        color: #ef4444;
+        border: 1px solid rgba(239, 68, 68, 0.15);
+        padding: 2px 6px;
+        border-radius: 4px;
+        margin-left: 6px;
+        vertical-align: middle;
       }
     }
   }
@@ -232,7 +283,7 @@
   }
 }
 
-// Master Directory Table Card
+// Master Table Card
 .tableCard {
   background: #ffffff;
   border: 1px solid #e2e8f0;
@@ -346,6 +397,14 @@
     }
 
     tbody {
+      tr {
+        border-bottom: 1px solid #f1f5f9;
+
+        &:last-child {
+          border-bottom: none;
+        }
+      }
+
       .tableLoading, .tableEmpty {
         padding: 40px;
         text-align: center;
@@ -621,6 +680,136 @@
             }
           }
         }
+      }
+    }
+  }
+}
+
+// --- INTERNAL COMPANY ROWS & STYLE ---
+.companyRow {
+  background: #ffffff;
+  transition: background-color 0.15s;
+
+  &:hover {
+    background-color: #f8fafc;
+  }
+
+  td {
+    padding: 16px 24px;
+    font-size: 14px;
+    color: #334155;
+  }
+}
+
+.companyNameCell {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+
+  .avatarBox {
+    width: 38px;
+    height: 38px;
+    border-radius: 4px;
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    color: #475569;
+    font-size: 14px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .companyMeta {
+    display: flex;
+    flex-direction: column;
+
+    .companyNameText {
+      font-weight: 600;
+      color: #0f172a;
+      font-size: 14px;
+    }
+
+    .companySub {
+      font-size: 11px;
+      color: #64748b;
+      margin-top: 2px;
+    }
+  }
+}
+
+.rfcCell {
+  font-family: 'Geist', monospace;
+  font-size: 13px;
+  letter-spacing: 0.03em;
+}
+
+.billedCell {
+  font-family: 'Geist', monospace;
+  font-weight: 500;
+  color: #334155;
+}
+
+.balanceCell {
+  font-family: 'Geist', monospace;
+  font-weight: 600;
+
+  .liquidBalanceWrapper {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+
+    .positive {
+      color: #006c49;
+    }
+
+    .negative {
+      color: #ef4444;
+    }
+
+    .trendUpIcon {
+      color: #006c49;
+    }
+
+    .trendDownIcon {
+      color: #ef4444;
+    }
+
+    .neutralDash {
+      color: #94a3b8;
+    }
+  }
+}
+
+.companyActionsCell {
+  .actionIconGroup {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+
+    button {
+      background: none;
+      border: none;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: #64748b;
+      transition: background 0.15s, color 0.15s;
+
+      &.iconEditBtn:hover {
+        background: #f1f5f9;
+        color: #0f172a;
+      }
+
+      &.iconDeleteBtn:hover {
+        background: #fef2f2;
+        color: #ef4444;
       }
     }
   }

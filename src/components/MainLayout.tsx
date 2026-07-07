@@ -3,15 +3,15 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useDatabase } from '../hooks/useDatabase';
 import type { InternalCompany, BankTransaction } from '../types';
-import { 
-  LogOut, 
-  LayoutDashboard, 
-  Landmark, 
-  ShieldCheck, 
-  Bell, 
-  HelpCircle, 
-  Building2, 
-  User, 
+import {
+  LogOut,
+  LayoutDashboard,
+  Landmark,
+  ShieldCheck,
+  Bell,
+  HelpCircle,
+  Building2,
+  User,
   Plus,
   CloudUpload,
   Users
@@ -85,27 +85,27 @@ export const MainLayout = () => {
         </div>
 
         <nav className={styles.nav}>
-          <NavLink 
-            to="/" 
+          <NavLink
+            to="/"
             className={({ isActive }) => `${styles.navItem} ${isActive ? styles.active : ''}`}
           >
             <LayoutDashboard size={18} />
             <span>Dashboard</span>
           </NavLink>
-          
+
           {profile?.role === 'owner' && (
-            <NavLink 
-              to="/clients" 
+            <NavLink
+              to="/directory"
               className={({ isActive }) => `${styles.navItem} ${isActive ? styles.active : ''}`}
             >
               <Users size={18} />
-              <span>Clientes</span>
+              <span>Directorio</span>
             </NavLink>
           )}
 
           {(profile?.role === 'owner' || profile?.role === 'auditor') && (
-            <NavLink 
-              to="/reconciliation" 
+            <NavLink
+              to="/reconciliation"
               className={({ isActive }) => `${styles.navItem} ${isActive ? styles.active : ''}`}
             >
               <ShieldCheck size={18} />
@@ -114,8 +114,8 @@ export const MainLayout = () => {
           )}
 
           {(profile?.role === 'owner' || profile?.role === 'ops') && (
-            <NavLink 
-              to="/vault" 
+            <NavLink
+              to="/vault"
               className={({ isActive }) => `${styles.navItem} ${isActive ? styles.active : ''}`}
             >
               <CloudUpload size={18} />
@@ -124,8 +124,8 @@ export const MainLayout = () => {
           )}
 
           {(profile?.role === 'owner' || profile?.role === 'auditor') && (
-            <NavLink 
-              to="/bank" 
+            <NavLink
+              to="/bank"
               className={({ isActive }) => `${styles.navItem} ${isActive ? styles.active : ''}`}
             >
               <Landmark size={18} />
@@ -135,8 +135,8 @@ export const MainLayout = () => {
         </nav>
 
         <div className={styles.sidebarFooter}>
-          <button 
-            onClick={() => navigate('/reconciliation', { state: { triggerUpload: true } })} 
+          <button
+            onClick={() => navigate('/reconciliation', { state: { triggerUpload: true } })}
             className={styles.newReconBtn}
           >
             <Plus size={16} />
@@ -183,14 +183,14 @@ export const MainLayout = () => {
 
           <div className={styles.headerRight}>
             <div className={styles.notificationWrapper} ref={popoverRef}>
-              <button 
+              <button
                 className={`${styles.headerBtn} ${showNotifications ? styles.btnActive : ''}`}
                 onClick={() => setShowNotifications(!showNotifications)}
               >
                 <Bell size={18} />
                 {anomalies.length > 0 && <span className={styles.notificationDot}></span>}
               </button>
-              
+
               {showNotifications && (
                 <div className={styles.notificationsPopover}>
                   <div className={styles.popoverHeader}>
@@ -201,8 +201,8 @@ export const MainLayout = () => {
                       <p className={styles.emptyNotification}>No hay anomalías pendientes.</p>
                     ) : (
                       anomalies.map(anomaly => (
-                        <div 
-                          key={anomaly.id} 
+                        <div
+                          key={anomaly.id}
                           className={styles.notificationItem}
                           onClick={() => {
                             setShowNotifications(false);
@@ -227,13 +227,13 @@ export const MainLayout = () => {
               <HelpCircle size={18} />
             </button>
             <div className={styles.divider}></div>
-            
+
             <div className={styles.userProfile}>
               <div className={styles.userMeta}>
                 <p className={styles.userName}>{profile?.full_name || 'Usuario'}</p>
                 <p className={styles.userRole}>
-                  {profile?.role === 'owner' ? 'Propietario Ejecutivo' : 
-                   profile?.role === 'ops' ? 'Gerente de Operaciones' : 'Auditor'}
+                  {profile?.role === 'owner' ? 'Propietario Ejecutivo' :
+                    profile?.role === 'ops' ? 'Gerente de Operaciones' : 'Auditor'}
                 </p>
               </div>
               <div className={styles.avatar}>

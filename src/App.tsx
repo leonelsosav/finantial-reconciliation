@@ -7,7 +7,7 @@ import { Dashboard } from './pages/Dashboard';
 import { BankManagement } from './pages/BankManagement';
 import { Reconciliation } from './pages/Reconciliation';
 import { Vault } from './pages/Vault';
-import { Clients } from './pages/Clients';
+import { Directory } from './pages/Directory';
 
 export const App = () => {
   return (
@@ -22,7 +22,7 @@ export const App = () => {
             </ProtectedRoute>
           }>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/clients" element={<Clients />} />
+            <Route path="/directory" element={<Directory />} />
             <Route path="/bank" element={<BankManagement />} />
             <Route path="/reconciliation" element={<Reconciliation />} />
             <Route path="/vault" element={<Vault />} />
