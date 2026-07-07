@@ -21,11 +21,11 @@ export const App = () => {
               <MainLayout />
             </ProtectedRoute>
           }>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/directory" element={<Directory />} />
-            <Route path="/bank" element={<BankManagement />} />
-            <Route path="/reconciliation" element={<Reconciliation />} />
-            <Route path="/vault" element={<Vault />} />
+            <Route path="/" element={<ProtectedRoute allowedRoles={['owner', 'auditor']}><Dashboard /></ProtectedRoute>} />
+            <Route path="/directory" element={<ProtectedRoute allowedRoles={['owner']}><Directory /></ProtectedRoute>} />
+            <Route path="/bank" element={<ProtectedRoute allowedRoles={['owner', 'auditor']}><BankManagement /></ProtectedRoute>} />
+            <Route path="/reconciliation" element={<ProtectedRoute allowedRoles={['owner', 'auditor']}><Reconciliation /></ProtectedRoute>} />
+            <Route path="/vault" element={<ProtectedRoute allowedRoles={['owner', 'ops']}><Vault /></ProtectedRoute>} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

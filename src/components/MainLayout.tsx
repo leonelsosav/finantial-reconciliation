@@ -85,13 +85,15 @@ export const MainLayout = () => {
         </div>
 
         <nav className={styles.nav}>
-          <NavLink
-            to="/"
-            className={({ isActive }) => `${styles.navItem} ${isActive ? styles.active : ''}`}
-          >
-            <LayoutDashboard size={18} />
-            <span>Dashboard</span>
-          </NavLink>
+          {profile?.role !== 'ops' && (
+            <NavLink
+              to="/"
+              className={({ isActive }) => `${styles.navItem} ${isActive ? styles.active : ''}`}
+            >
+              <LayoutDashboard size={18} />
+              <span>Dashboard</span>
+            </NavLink>
+          )}
 
           {profile?.role === 'owner' && (
             <NavLink
@@ -135,13 +137,15 @@ export const MainLayout = () => {
         </nav>
 
         <div className={styles.sidebarFooter}>
-          <button
-            onClick={() => navigate('/reconciliation', { state: { triggerUpload: true } })}
-            className={styles.newReconBtn}
-          >
-            <Plus size={16} />
-            <span>Nueva Conciliación</span>
-          </button>
+          {profile?.role !== 'ops' && (
+            <button
+              onClick={() => navigate('/reconciliation', { state: { triggerUpload: true } })}
+              className={styles.newReconBtn}
+            >
+              <Plus size={16} />
+              <span>Nueva Conciliación</span>
+            </button>
+          )}
 
           <div className={styles.footerLink}>
             <User size={16} />

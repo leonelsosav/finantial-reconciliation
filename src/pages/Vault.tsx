@@ -17,7 +17,8 @@ import {
   X, 
   Filter,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Trash2
 } from 'lucide-react';
 import styles from './Vault.module.scss';
 
@@ -36,6 +37,7 @@ export const Vault = () => {
   // Ingestion state
   const [dragActive, setDragActive] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [activeUploadFile, setActiveUploadFile] = useState<string | null>(null);
 
@@ -250,6 +252,36 @@ export const Vault = () => {
     }
   };
 
+  const handleClearVault = async () => {
+    const confirmClear = window.confirm(
+      '¿Está seguro de que desea eliminar todos los registros de la Bóveda de Ingestión? Esta acción no se puede deshacer.'
+    );
+    if (!confirmClear) return;
+
+    setIsDeleting(true);
+    try {
+      const { error } = await supabase
+        .from('billing_records')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+      
+      if (error) throw error;
+
+      alert('Todos los registros de la bóveda fueron eliminados con éxito.');
+      
+      setSessionQueueCount(0);
+      setSessionErrorsCount(0);
+      fetchBilling({
+        sort: { column: 'created_at', direction: 'desc' }
+      });
+    } catch (err: any) {
+      console.error('Error clearing vault:', err);
+      alert(`Error al limpiar la bóveda: ${err.message}`);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleOpenDrawer = (group: typeof uploadGroups[0]) => {
     setSelectedGroup(group);
     setIsDrawerOpen(true);
@@ -294,11 +326,23 @@ export const Vault = () => {
           <h1 className={styles.pageTitle}>Bóveda de Ingestión de Facturas</h1>
           <p className={styles.pageSub}>Pasarela de validación para XML de CONTPAQi® y registros contables Excel.</p>
         </div>
-        <div className={styles.authBadge}>
-          <ShieldCheck size={18} className={styles.authIcon} />
-          <div>
-            <span className={styles.authRoleLabel}>Rol de Operación</span>
-            <span className={styles.authRoleName}>Accountant / Specialist</span>
+        <div className={styles.headerActions}>
+          <button 
+            type="button" 
+            className={styles.clearBtn} 
+            onClick={handleClearVault}
+            disabled={isDeleting}
+          >
+            <Trash2 size={14} />
+            <span>{isDeleting ? 'Limpiando...' : 'Limpiar Bóveda'}</span>
+          </button>
+          
+          <div className={styles.authBadge}>
+            <ShieldCheck size={18} className={styles.authIcon} />
+            <div>
+              <span className={styles.authRoleLabel}>Rol de Operación</span>
+              <span className={styles.authRoleName}>Accountant / Specialist</span>
+            </div>
           </div>
         </div>
       </div>

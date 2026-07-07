@@ -20,6 +20,9 @@ export const ProtectedRoute = ({ children, allowedRoles }: Props) => {
   }
 
   if (allowedRoles && profile && !allowedRoles.includes(profile.role)) {
+    if (profile.role === 'ops') {
+      return <Navigate to="/vault" replace />;
+    }
     return <Navigate to="/" replace />;
   }
 
