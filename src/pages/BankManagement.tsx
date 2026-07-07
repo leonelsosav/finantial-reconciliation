@@ -8,26 +8,26 @@ import type { BankTransaction, InternalCompany } from '../types';
 import { 
   Upload, 
   Lock, 
-  Edit, 
-  Trash2, 
-  Copy, 
-  Plus, 
   AlertTriangle, 
   MoreVertical, 
   ShieldCheck, 
   Loader2, 
   FileImage,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  CheckCircle2,
+  Sparkles,
+  Trash2
 } from 'lucide-react';
 import styles from './BankManagement.module.scss';
 
-interface RapidRow {
+interface ParsedTransaction {
   id: string;
   date: string;
   description: string;
   reference: string;
-  amount: string;
+  amount: number;
+  lowConfidence: boolean;
 }
 
 export const BankManagement = () => {
@@ -44,22 +44,22 @@ export const BankManagement = () => {
   // Account / Company filter context
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
 
-  // Screenshot Upload pane states
+  // OCR/Screenshot states
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [captureUrl, setCaptureUrl] = useState<string | null>(null);
   const [activeUploadFile, setActiveUploadFile] = useState<string | null>(null);
   const [systemPayloadId, setSystemPayloadId] = useState<string>('');
+  const [isDragActive, setIsDragActive] = useState<boolean>(false);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [processingProgress, setProcessingProgress] = useState<number>(0);
 
   // Draggable split-pane width (in percentage)
   const [splitWidth, setSplitWidth] = useState<number>(50);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isResizing, setIsResizing] = useState(false);
 
-  // Rapid entry grid state
-  const [rapidRows, setRapidRows] = useState<RapidRow[]>([
-    { id: '1', date: '', description: '', reference: '', amount: '' }
-  ]);
-  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  // Parsed grid state
+  const [parsedBatch, setParsedBatch] = useState<ParsedTransaction[]>([]);
 
   // Historical ledger state
   const [menuOpenRowId, setMenuOpenRowId] = useState<string | null>(null);
@@ -97,6 +97,7 @@ export const BankManagement = () => {
     setCaptureUrl(null);
     setActiveUploadFile(null);
     setSystemPayloadId('');
+    setParsedBatch([]);
   }, [selectedCompanyId]);
 
   // Draggable Pane Handlers
@@ -136,85 +137,100 @@ export const BankManagement = () => {
     };
   }, [isResizing]);
 
-  // Screenshot Upload Handler
+  // File drag & drop handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragActive(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragActive(false);
+  };
+
+  const processMockOCR = (fileName: string) => {
+    setActiveUploadFile(fileName);
+    
+    // Generate system payload ID (e.g., BXC-992-ALPHA)
+    const randomNum = Math.floor(Math.random() * 900) + 100;
+    const alphaSuffix = ['ALPHA', 'BETA', 'GAMMA', 'DELTA'][Math.floor(Math.random() * 4)];
+    setSystemPayloadId(`BXC-${randomNum}-${alphaSuffix}`);
+    
+    setIsProcessing(true);
+    setProcessingProgress(0);
+    setParsedBatch([]);
+
+    // Progress simulation
+    let currentProgress = 0;
+    const interval = setInterval(() => {
+      currentProgress += 10;
+      setProcessingProgress(currentProgress);
+      if (currentProgress >= 100) {
+        clearInterval(interval);
+        
+        // Mock parsed transactions from bank statement screenshot
+        setParsedBatch([
+          { 
+            id: '1', 
+            date: '15/05/2024', 
+            description: 'PAGO NOMINA QUINCENAL', 
+            reference: 'NOM-8821-A', 
+            amount: -185000.00, 
+            lowConfidence: false 
+          },
+          { 
+            id: '2', 
+            date: '14/05/2024', 
+            description: 'TRANSFERENCIA INTERBANCARIA SPEI RECIBIDA', 
+            reference: 'SPEI-00921', 
+            amount: 250000.00, 
+            lowConfidence: false 
+          },
+          { 
+            id: '3', 
+            date: '12/05/2024', 
+            description: 'HONORARIOS GESTION NOMINA 5%', 
+            reference: 'FEE-7721', 
+            amount: -9250.00, 
+            lowConfidence: true 
+          }
+        ]);
+        
+        setIsProcessing(false);
+      }
+    }, 150);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragActive(false);
+    
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const file = e.dataTransfer.files[0];
+      const url = URL.createObjectURL(file);
+      setCaptureUrl(url);
+      processMockOCR(file.name);
+    }
+  };
+
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       const url = URL.createObjectURL(file);
       setCaptureUrl(url);
-      setActiveUploadFile(file.name);
-      
-      // Generate system payload ID (e.g., BXC-992-ALPHA)
-      const randomNum = Math.floor(Math.random() * 900) + 100;
-      const alphaSuffix = ['ALPHA', 'BETA', 'GAMMA', 'DELTA'][Math.floor(Math.random() * 4)];
-      setSystemPayloadId(`BXC-${randomNum}-${alphaSuffix}`);
-    }
-  };
-
-  // Keyboard navigation & grids cell updates
-  const updateRowField = (id: string, field: keyof RapidRow, value: string) => {
-    setRapidRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r));
-  };
-
-  const handleCellKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, id: string, rowIndex: number, field: keyof RapidRow) => {
-    const fieldsOrder: (keyof RapidRow)[] = ['date', 'description', 'reference', 'amount'];
-    const currentFieldIndex = fieldsOrder.indexOf(field);
-
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      // If we are at the amount input of the last row, insert a new row
-      if (field === 'amount' && rowIndex === rapidRows.length - 1) {
-        const newId = String(Date.now());
-        setRapidRows(prev => [...prev, { id: newId, date: '', description: '', reference: '', amount: '' }]);
-        
-        // Focus first cell of new row in next tick
-        setTimeout(() => {
-          inputRefs.current[`${newId}-date`]?.focus();
-        }, 50);
-      } else if (currentFieldIndex < fieldsOrder.length - 1) {
-        // Focus next cell in the same row
-        const nextField = fieldsOrder[currentFieldIndex + 1];
-        inputRefs.current[`${id}-${nextField}`]?.focus();
-      }
-    } else if (e.key === 'ArrowDown' && rowIndex < rapidRows.length - 1) {
-      const nextRowId = rapidRows[rowIndex + 1].id;
-      inputRefs.current[`${nextRowId}-${field}`]?.focus();
-    } else if (e.key === 'ArrowUp' && rowIndex > 0) {
-      const prevRowId = rapidRows[rowIndex - 1].id;
-      inputRefs.current[`${prevRowId}-${field}`]?.focus();
-    }
-  };
-
-  const handleAddRow = () => {
-    const newId = String(Date.now());
-    setRapidRows(prev => [...prev, { id: newId, date: '', description: '', reference: '', amount: '' }]);
-    setTimeout(() => {
-      inputRefs.current[`${newId}-date`]?.focus();
-    }, 50);
-  };
-
-  const handleCopyRow = (row: RapidRow) => {
-    const newId = String(Date.now());
-    setRapidRows(prev => [...prev, { ...row, id: newId }]);
-  };
-
-  const handleDeleteRow = (id: string) => {
-    if (rapidRows.length === 1) {
-      setRapidRows([{ id: '1', date: '', description: '', reference: '', amount: '' }]);
-    } else {
-      setRapidRows(prev => prev.filter(r => r.id !== id));
+      processMockOCR(file.name);
     }
   };
 
   // Live total calculations
-  const totalIngested = useMemo(() => {
-    return rapidRows.reduce((sum, r) => {
-      const val = parseFloat(r.amount);
-      return isNaN(val) ? sum : sum + val;
-    }, 0);
-  }, [rapidRows]);
+  const totalInflow = useMemo(() => {
+    return parsedBatch.reduce((sum, r) => r.amount > 0 ? sum + r.amount : sum, 0);
+  }, [parsedBatch]);
 
-  // Parsing date from DD/MM/YY or DD/MM/YYYY into YYYY-MM-DD
+  const totalOutflow = useMemo(() => {
+    return parsedBatch.reduce((sum, r) => r.amount < 0 ? sum + r.amount : sum, 0);
+  }, [parsedBatch]);
+
   const parseDateInput = (str: string): string => {
     const parts = str.split('/');
     if (parts.length === 3) {
@@ -229,12 +245,10 @@ export const BankManagement = () => {
     return DateEngine.getLocalYYYYMMDD(new Date());
   };
 
-  // Validate & Commit to Supabase
+  // Commit to Supabase
   const handleValidateAndCommit = async () => {
-    // 1. Validation check
-    const emptyFieldExists = rapidRows.some(r => !r.date || !r.description || !r.amount);
-    if (emptyFieldExists) {
-      alert('Error de validación: Asegúrese de que todos los registros tengan Fecha, Descripción y Monto.');
+    if (parsedBatch.length === 0) {
+      alert('Error: No hay transacciones extraídas para confirmar.');
       return;
     }
 
@@ -245,13 +259,13 @@ export const BankManagement = () => {
 
     try {
       // Form payload
-      const payload = rapidRows.map(r => ({
+      const payload = parsedBatch.map(r => ({
         internal_company_id: selectedCompanyId,
         transaction_date: parseDateInput(r.date),
         description: r.description,
         reference_number: r.reference || null,
-        amount: parseFloat(r.amount),
-        transaction_category: 'client_operation' as const, // default category
+        amount: r.amount,
+        transaction_category: (r.amount < 0 && r.description.includes('HONORARIOS')) ? 'corporate_opex' as const : 'client_operation' as const,
         ingestion_source: 'daily_screenshot_assisted',
         evidence_url: activeUploadFile || null,
         is_reconciled: false
@@ -261,10 +275,13 @@ export const BankManagement = () => {
       const { error } = await supabase.from('bank_transactions').insert(payload);
       if (error) throw error;
 
-      alert(`Se han ingestado ${rapidRows.length} registros bancarios exitosamente.`);
+      alert(`Se han ingestado ${parsedBatch.length} registros bancarios exitosamente.`);
       
       // Clean workspace
-      setRapidRows([{ id: String(Date.now()), date: '', description: '', reference: '', amount: '' }]);
+      setParsedBatch([]);
+      setCaptureUrl(null);
+      setActiveUploadFile(null);
+      setSystemPayloadId('');
       loadTransactions();
     } catch (err: any) {
       console.error('Error committing transactions:', err);
@@ -272,7 +289,6 @@ export const BankManagement = () => {
     }
   };
 
-  // Triple dot menu updates
   const handleUpdateCategory = async (id: string, category: 'client_operation' | 'internal_transfer' | 'corporate_opex') => {
     try {
       await updateRecord(id, { transaction_category: category });
@@ -394,7 +410,7 @@ export const BankManagement = () => {
       {/* Ingestion Split view */}
       <div className={styles.splitWorkspace} ref={containerRef}>
         
-        {/* Left Pane: Visual Screenshot Proof */}
+        {/* Left Pane: Drag-and-Drop Area & OCR Loader */}
         <section 
           className={styles.capturePane} 
           style={{ flex: `0 0 ${splitWidth}%` }}
@@ -410,16 +426,34 @@ export const BankManagement = () => {
           </div>
 
           <div className={styles.paneBody}>
-            {captureUrl ? (
+            {isProcessing ? (
+              <div className={styles.processingOverlay}>
+                <Loader2 size={36} className={styles.loader} />
+                <h3>Procesando OCR Vision Engine</h3>
+                <p>Extrayendo metadatos de la captura bancaria...</p>
+                <div className={styles.progressContainer}>
+                  <div 
+                    className={styles.progressBar} 
+                    style={{ width: `${processingProgress}%` }}
+                  />
+                </div>
+              </div>
+            ) : captureUrl ? (
               <div 
                 className={styles.captureImage}
                 style={{ backgroundImage: `url(${captureUrl})` }}
               />
             ) : (
-              <div className={styles.emptyCapture}>
-                <FileImage size={48} className={styles.emptyIcon} />
-                <h3>Ninguna Captura Cargada</h3>
-                <p>Cargue una captura de pantalla del portal bancario usando el botón superior "Cargar Captura" para utilizar la referencia visual.</p>
+              <div 
+                className={`${styles.dropZone} ${isDragActive ? styles.dragActive : ''}`}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <FileImage size={48} className={styles.uploadIcon} />
+                <h3>Arrastre y suelte su captura de pantalla aquí</h3>
+                <p>O haga clic para examinar archivos. Se procesarán y auto-completarán los registros mediante OCR local.</p>
               </div>
             )}
           </div>
@@ -431,121 +465,78 @@ export const BankManagement = () => {
           onMouseDown={handleMouseDown}
         />
 
-        {/* Right Pane: Rapid Entry Spreadsheet Grid */}
+        {/* Right Pane: Parsed Preview Stream */}
         <section 
           className={styles.entryPane}
           style={{ flex: 1 }}
         >
           <div className={styles.paneHeader}>
             <span className={`${styles.paneTitle} ${styles.primaryAccent}`}>
-              <Edit size={12} className={styles.paneTitleIcon} />
-              RAPID ENTRY WORKSPACE
+              <Sparkles size={12} className={styles.paneTitleIcon} />
+              PARSED PREVIEW STREAM
             </span>
           </div>
 
           <div className={styles.entryTableWrapper}>
-            <table className={styles.entryTable}>
-              <thead>
-                <tr>
-                  <th style={{ width: '120px' }}>Fecha</th>
-                  <th>Descripción</th>
-                  <th style={{ width: '140px' }}>Referencia</th>
-                  <th style={{ width: '130px' }} className={styles.alignRight}>Monto</th>
-                  <th style={{ width: '80px' }} className={styles.alignCenter}>Acción</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rapidRows.map((row, idx) => (
-                  <tr key={row.id}>
-                    <td>
-                      <input 
-                        type="text" 
-                        placeholder="DD/MM/YY"
-                        value={row.date}
-                        ref={el => { inputRefs.current[`${row.id}-date`] = el; }}
-                        onChange={e => updateRowField(row.id, 'date', e.target.value)}
-                        onKeyDown={e => handleCellKeyDown(e, row.id, idx, 'date')}
-                        className={styles.gridInput}
-                      />
-                    </td>
-                    <td>
-                      <input 
-                        type="text" 
-                        placeholder="Nomina/Servicios/Gasto..."
-                        value={row.description}
-                        ref={el => { inputRefs.current[`${row.id}-description`] = el; }}
-                        onChange={e => updateRowField(row.id, 'description', e.target.value)}
-                        onKeyDown={e => handleCellKeyDown(e, row.id, idx, 'description')}
-                        className={styles.gridInput}
-                      />
-                    </td>
-                    <td>
-                      <input 
-                        type="text" 
-                        placeholder="REF-0000"
-                        value={row.reference}
-                        ref={el => { inputRefs.current[`${row.id}-reference`] = el; }}
-                        onChange={e => updateRowField(row.id, 'reference', e.target.value)}
-                        onKeyDown={e => handleCellKeyDown(e, row.id, idx, 'reference')}
-                        className={`${styles.gridInput} ${styles.monoText}`}
-                      />
-                    </td>
-                    <td>
-                      <input 
-                        type="text" 
-                        placeholder="0.00"
-                        value={row.amount}
-                        ref={el => { inputRefs.current[`${row.id}-amount`] = el; }}
-                        onChange={e => updateRowField(row.id, 'amount', e.target.value)}
-                        onKeyDown={e => handleCellKeyDown(e, row.id, idx, 'amount')}
-                        className={`${styles.gridInput} ${styles.monoText} ${styles.alignRight} ${parseFloat(row.amount) >= 0 ? styles.positiveText : styles.negativeText}`}
-                      />
-                    </td>
-                    <td className={styles.alignCenter}>
-                      <div className={styles.rowActions}>
-                        <button 
-                          className={styles.rowBtn}
-                          onClick={() => handleCopyRow(row)}
-                          title="Duplicar registro"
-                        >
-                          <Copy size={12} />
-                        </button>
-                        <button 
-                          className={`${styles.rowBtn} ${styles.danger}`}
-                          onClick={() => handleDeleteRow(row.id)}
-                          title="Eliminar registro"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    </td>
+            {parsedBatch.length === 0 ? (
+              <div className={styles.emptyWorkspaceText}>
+                {isProcessing ? 'Procesando captura visual...' : 'Esperando captura para extracción de metadatos...'}
+              </div>
+            ) : (
+              <table className={styles.entryTable}>
+                <thead>
+                  <tr>
+                    <th style={{ width: '120px' }}>Fecha</th>
+                    <th>Descripción</th>
+                    <th style={{ width: '140px' }}>Referencia</th>
+                    <th style={{ width: '130px' }} className={styles.alignRight}>Monto</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <button 
-              className={styles.addRecordBtn}
-              onClick={handleAddRow}
-            >
-              <Plus size={14} />
-              <span>Añadir Registro (Enter)</span>
-            </button>
+                </thead>
+                <tbody>
+                  {parsedBatch.map((row) => (
+                    <tr key={row.id}>
+                      <td className={row.lowConfidence ? styles.lowConfidenceCell : ''}>
+                        {row.date}
+                        {row.lowConfidence && (
+                          <span className={styles.warningIcon} title="Confianza Baja (82%)">
+                            <AlertTriangle size={12} />
+                          </span>
+                        )}
+                      </td>
+                      <td>{row.description}</td>
+                      <td>
+                        <span className={styles.monoText}>{row.reference}</span>
+                      </td>
+                      <td className={`${styles.alignRight} ${row.amount >= 0 ? styles.positiveText : styles.negativeText} ${styles.monoText}`}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                          <span>{row.amount >= 0 ? '+' : '-'}{formatCurrency(row.amount)}</span>
+                          {row.amount >= 0 && <CheckCircle2 size={12} className={styles.positiveText} />}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
 
-          <div className={styles.entryFooter}>
-            <div className={styles.batchInfo}>
-              <span>Lote: <strong>{rapidRows.length} items</strong></span>
-              <span className={styles.dividerDot}></span>
-              <span>Total Ingestado: <strong className={totalIngested >= 0 ? styles.positiveText : styles.negativeText}>{formatCurrency(totalIngested)}</strong></span>
+          {parsedBatch.length > 0 && (
+            <div className={styles.entryFooter}>
+              <div className={styles.batchInfo}>
+                <span>Lote: <strong>{parsedBatch.length} items</strong></span>
+                <span className={styles.dividerDot}></span>
+                <span>Fondeo: <strong className={styles.positiveText}>+{formatCurrency(totalInflow)}</strong></span>
+                <span className={styles.dividerDot}></span>
+                <span>Retiro: <strong className={styles.negativeText}>-{formatCurrency(totalOutflow)}</strong></span>
+              </div>
+              <button 
+                className={styles.commitBtn}
+                onClick={handleValidateAndCommit}
+              >
+                Confirmar y Guardar Lote
+              </button>
             </div>
-            <button 
-              className={styles.commitBtn}
-              onClick={handleValidateAndCommit}
-            >
-              Validate & Commit
-            </button>
-          </div>
+          )}
         </section>
 
       </div>
@@ -704,7 +695,7 @@ export const BankManagement = () => {
       {/* Protocol Memo */}
       <div className={styles.protocolMemo}>
         <ShieldCheck size={16} className={styles.protocolIcon} />
-        <p><strong>Protocolo de Captura y Registro (SAT Coherencia):</strong> Todos los registros insertados en este workspace son inyectados con `ingestion_source = 'daily_screenshot_assisted'`. Para mantener la integridad fiscal, las discrepancias en sumas de control con el Libro Mayor del SAT serán reportadas automáticamente al Auditor en Jefe.</p>
+        <p><strong>Protocolo de Ingestión Automatizada (OCR SAT):</strong> Todos los registros insertados en este workspace son inyectados con `ingestion_source = 'daily_screenshot_assisted'`. Para mantener la integridad fiscal, las discrepancias en sumas de control con el Libro Mayor del SAT serán reportadas automáticamente al Auditor en Jefe.</p>
       </div>
     </div>
   );

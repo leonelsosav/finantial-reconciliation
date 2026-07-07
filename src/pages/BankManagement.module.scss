@@ -841,3 +841,121 @@
     background-color: #1e293b;
   }
 }
+
+.dropZone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  height: 100%;
+  min-height: 380px;
+  padding: 24px;
+  color: #64748b;
+  border: 2px dashed #cbd5e1;
+  border-radius: 8px;
+  background-color: #ffffff;
+  transition: all 0.2s ease;
+  cursor: pointer;
+
+  &:hover, &.dragActive {
+    border-color: #10b981;
+    background-color: rgba(16, 185, 129, 0.02);
+    color: #10b981;
+  }
+
+  .uploadIcon {
+    color: #cbd5e1;
+    margin-bottom: 16px;
+    transition: color 0.2s;
+  }
+
+  &:hover .uploadIcon, &.dragActive .uploadIcon {
+    color: #10b981;
+  }
+
+  h3 {
+    font-size: 14px;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 0 0 6px;
+  }
+
+  p {
+    font-size: 11px;
+    line-height: 1.5;
+    max-width: 280px;
+    margin: 0;
+  }
+}
+
+.processingOverlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  height: 100%;
+  min-height: 380px;
+  background-color: #ffffff;
+  border-radius: 8px;
+  border: 1px dashed #cbd5e1;
+  padding: 24px;
+  
+  .loader {
+    color: #10b981;
+    animation: rotation 1.5s linear infinite;
+    margin-bottom: 16px;
+  }
+  
+  h3 {
+    font-size: 14px;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 0 0 6px;
+  }
+
+  p {
+    font-size: 11px;
+    color: #64748b;
+    margin-bottom: 16px;
+  }
+
+  .progressContainer {
+    width: 240px;
+    height: 6px;
+    background-color: #e2e8f0;
+    border-radius: 99px;
+    overflow: hidden;
+    
+    .progressBar {
+      height: 100%;
+      background-color: #10b981;
+      transition: width 0.1s linear;
+    }
+  }
+}
+
+.lowConfidenceCell {
+  background-color: rgba(245, 158, 11, 0.08) !important;
+  color: #d97706 !important;
+  position: relative;
+  font-weight: 500;
+  
+  .warningIcon {
+    display: inline-flex;
+    align-items: center;
+    color: #f59e0b;
+    vertical-align: middle;
+    margin-left: 6px;
+  }
+}
+
+.emptyWorkspaceText {
+  padding: 40px;
+  text-align: center;
+  color: #64748b;
+  font-style: italic;
+  font-size: 13px;
+}
+
