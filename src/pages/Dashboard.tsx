@@ -876,7 +876,7 @@ export const Dashboard = () => {
           <h2>Acceso Restringido</h2>
           <p>Este Panel de Control Ejecutivo contiene información financiera confidencial de utilidades y flujo de caja.</p>
           <p className={styles.roleNotice}>Solo usuarios con el rol de <strong>Propietario (Owner)</strong> están autorizados a visualizar este panel.</p>
-          <button className={styles.redirectBtn} onClick={() => navigate('/audit')}>
+          <button className={styles.redirectBtn} onClick={() => navigate('/reconciliation')}>
             Ir a Conciliación (Auditoría)
           </button>
         </div>
@@ -967,7 +967,7 @@ export const Dashboard = () => {
         {/* Card 4: Unreconciled Anomalies */}
         <div 
           className={`${styles.metricCard} ${styles.cardDanger} ${styles.clickableCard}`}
-          onClick={() => navigate('/audit')}
+          onClick={() => navigate('/reconciliation')}
         >
           <div className={styles.cardIndicator}></div>
           <div className={styles.cardHeader}>

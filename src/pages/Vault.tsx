@@ -160,13 +160,9 @@ export const Vault = () => {
 
   // Processing routine
   const processUploadedFile = async (file: File) => {
-    const isXML = file.name.endsWith('.xml');
-    const isXLSX = file.name.endsWith('.xlsx');
-
-    if (!isXML && !isXLSX) {
-      alert('Formato de archivo inválido. Por favor, suba archivos .xml de CONTPAQi® o registros .xlsx estándar.');
-      return;
-    }
+    // For demo purposes, we accept any file type.
+    // If the file extension is not explicitly xlsx, we default to XML mode for mock data generation.
+    const isXML = !file.name.endsWith('.xlsx');
 
     if (clients.length === 0 || companies.length === 0) {
       alert('Esperando que se carguen las entidades autorizadas. Intente de nuevo en unos segundos.');
@@ -226,7 +222,7 @@ export const Vault = () => {
           description: file.name, // Save original file name in description for grouping
           operation_date: DateEngine.getLocalYYYYMMDD(new Date()),
           is_reconciled: false,
-          imported_by: profile?.email || 'operator'
+          imported_by: profile?.id || null
         });
       }
 
@@ -382,7 +378,6 @@ export const Vault = () => {
               <label className={styles.dropZoneLabel}>
                 <input 
                   type="file" 
-                  accept=".xml,.xlsx" 
                   className={styles.fileInput} 
                   onChange={handleFileInput}
                 />
