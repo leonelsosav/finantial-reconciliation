@@ -160,9 +160,6 @@ export const Vault = () => {
 
   // Processing routine
   const processUploadedFile = async (file: File) => {
-    // For demo purposes, we accept any file type.
-    // If the file extension is not explicitly xlsx, we default to XML mode for mock data generation.
-    const isXML = !file.name.endsWith('.xlsx');
 
     if (clients.length === 0 || companies.length === 0) {
       alert('Esperando que se carguen las entidades autorizadas. Intente de nuevo en unos segundos.');
@@ -188,8 +185,9 @@ export const Vault = () => {
     await new Promise(resolve => setTimeout(resolve, 1600));
 
     try {
-      // Simulate parser extracting billing lines
-      const itemsCount = isXML ? Math.floor(Math.random() * 8) + 2 : Math.floor(Math.random() * 45) + 5;
+      // Predefined mock invoice amounts to align perfectly with Bank Management workspace
+      const mockInvoiceAmounts = [125000.00, 95000.00, 5000.00, 72400.00, 45200.00, 3000.00];
+      const itemsCount = mockInvoiceAmounts.length;
       const createdRecords = [];
 
       // Pick a random client and matching internal company
@@ -205,8 +203,7 @@ export const Vault = () => {
       }
 
       for (let i = 0; i < itemsCount; i++) {
-        // Generate mock invoice data
-        const gross = Math.floor(Math.random() * 120000) + 8000;
+        const gross = mockInvoiceAmounts[i];
         
         createdRecords.push({
           client_id: randomClient.id,

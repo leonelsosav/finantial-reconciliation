@@ -148,7 +148,7 @@ export const BankManagement = () => {
     setIsDragActive(false);
   };
 
-  const processMockOCR = (fileName: string) => {
+  const processMockOCR = async (fileName: string) => {
     setActiveUploadFile(fileName);
     
     // Generate system payload ID (e.g., BXC-992-ALPHA)
@@ -168,34 +168,71 @@ export const BankManagement = () => {
       if (currentProgress >= 100) {
         clearInterval(interval);
         
-        // Mock parsed transactions from bank statement screenshot
-        setParsedBatch([
-          { 
-            id: '1', 
-            date: '15/05/2024', 
-            description: 'PAGO NOMINA QUINCENAL', 
-            reference: 'NOM-8821-A', 
-            amount: -185000.00, 
-            lowConfidence: false 
+        // Use local system date formatted as DD/MM/YYYY
+        const todayStr = DateEngine.getLocalYYYYMMDD(new Date());
+        const dateParts = todayStr.split('-');
+        const formattedDate = dateParts.length === 3 ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}` : '15/05/2024';
+
+        // Predefined mock statement transactions designed to perfectly align with Vault.tsx
+        // - Deposit: +125,000.00 (matches Vault's first invoice)
+        // - Fee: -5,000.00 (matches Vault's third invoice)
+        // - Withdrawal: -3,000.00 (unmatched opex exception)
+        // - Deposit: +72,400.00 (matches Vault's fourth invoice)
+        // - Deposit: +45,200.00 (matches Vault's fifth invoice)
+        // - Fee: -1,500.00 (matches Vault's sixth invoice)
+        // NOTE: Vault's second invoice (+95,000.00) remains unmatched.
+        const mockBatch: ParsedTransaction[] = [
+          {
+            id: '1',
+            date: formattedDate,
+            description: 'TRANSFERENCIA INTERBANCARIA SPEI RECIBIDA',
+            reference: `SPEI-${Math.floor(10000 + Math.random() * 90000)}`,
+            amount: 125000.00,
+            lowConfidence: false
           },
-          { 
-            id: '2', 
-            date: '14/05/2024', 
-            description: 'TRANSFERENCIA INTERBANCARIA SPEI RECIBIDA', 
-            reference: 'SPEI-00921', 
-            amount: 250000.00, 
-            lowConfidence: false 
+          {
+            id: '2',
+            date: formattedDate,
+            description: 'HONORARIOS GESTION NOMINA 5%',
+            reference: 'FEE-7721',
+            amount: -5000.00,
+            lowConfidence: true
           },
-          { 
-            id: '3', 
-            date: '12/05/2024', 
-            description: 'HONORARIOS GESTION NOMINA 5%', 
-            reference: 'FEE-7721', 
-            amount: -9250.00, 
-            lowConfidence: true 
+          {
+            id: '3',
+            date: formattedDate,
+            description: 'RETIRO EFECTIVO CAJERO AUTOMATICO',
+            reference: `ATM-${Math.floor(1000 + Math.random() * 9000)}`,
+            amount: -3000.00,
+            lowConfidence: false
+          },
+          {
+            id: '4',
+            date: formattedDate,
+            description: 'TRANSFERENCIA INTERBANCARIA SPEI RECIBIDA',
+            reference: `SPEI-${Math.floor(10000 + Math.random() * 90000)}`,
+            amount: 72400.00,
+            lowConfidence: false
+          },
+          {
+            id: '5',
+            date: formattedDate,
+            description: 'TRANSFERENCIA INTERBANCARIA SPEI RECIBIDA',
+            reference: `SPEI-${Math.floor(10000 + Math.random() * 90000)}`,
+            amount: 45200.00,
+            lowConfidence: false
+          },
+          {
+            id: '6',
+            date: formattedDate,
+            description: 'HONORARIOS GESTION NOMINA 5%',
+            reference: 'FEE-1500',
+            amount: -1500.00,
+            lowConfidence: true
           }
-        ]);
+        ];
         
+        setParsedBatch(mockBatch);
         setIsProcessing(false);
       }
     }, 150);

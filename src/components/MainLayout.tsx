@@ -85,7 +85,7 @@ export const MainLayout = () => {
         </div>
 
         <nav className={styles.nav}>
-          {profile?.role !== 'ops' && (
+          {profile?.role === 'owner' && (
             <NavLink
               to="/"
               className={({ isActive }) => `${styles.navItem} ${isActive ? styles.active : ''}`}

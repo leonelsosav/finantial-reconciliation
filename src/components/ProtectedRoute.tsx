@@ -23,6 +23,9 @@ export const ProtectedRoute = ({ children, allowedRoles }: Props) => {
     if (profile.role === 'ops') {
       return <Navigate to="/vault" replace />;
     }
+    if (profile.role === 'auditor') {
+      return <Navigate to="/bank" replace />;
+    }
     return <Navigate to="/" replace />;
   }
 

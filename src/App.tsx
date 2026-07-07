@@ -21,7 +21,7 @@ export const App = () => {
               <MainLayout />
             </ProtectedRoute>
           }>
-            <Route path="/" element={<ProtectedRoute allowedRoles={['owner', 'auditor']}><Dashboard /></ProtectedRoute>} />
+            <Route path="/" element={<ProtectedRoute allowedRoles={['owner']}><Dashboard /></ProtectedRoute>} />
             <Route path="/directory" element={<ProtectedRoute allowedRoles={['owner']}><Directory /></ProtectedRoute>} />
             <Route path="/bank" element={<ProtectedRoute allowedRoles={['owner', 'auditor']}><BankManagement /></ProtectedRoute>} />
             <Route path="/reconciliation" element={<ProtectedRoute allowedRoles={['owner', 'auditor']}><Reconciliation /></ProtectedRoute>} />
