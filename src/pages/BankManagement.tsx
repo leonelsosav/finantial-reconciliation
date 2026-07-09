@@ -12,7 +12,6 @@ import {
   Lock, 
   AlertTriangle, 
   MoreVertical, 
-  ShieldCheck, 
   Loader2, 
   FileImage,
   ChevronLeft,
@@ -56,6 +55,7 @@ export const BankManagement = () => {
   const [isDragActive, setIsDragActive] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [processingProgress, setProcessingProgress] = useState<number>(0);
+  const [isCommitting, setIsCommitting] = useState<boolean>(false);
 
   // Draggable split-pane width (in percentage)
   const [splitWidth, setSplitWidth] = useState<number>(50);
@@ -371,6 +371,7 @@ export const BankManagement = () => {
       return;
     }
 
+    setIsCommitting(true);
     try {
       // Form payload
       const payload = parsedBatch.map(r => ({
@@ -415,6 +416,8 @@ export const BankManagement = () => {
     } catch (err: any) {
       console.error('Error committing transactions:', err);
       alert(`Error al persistir transacciones: ${err.message}`);
+    } finally {
+      setIsCommitting(false);
     }
   };
 
@@ -698,8 +701,16 @@ export const BankManagement = () => {
               <button 
                 className={styles.commitBtn}
                 onClick={handleValidateAndCommit}
+                disabled={isCommitting}
               >
-                Confirmar y Guardar Lote
+                {isCommitting ? (
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                    <Loader2 size={16} className={styles.spin} />
+                    <span>Confirmando...</span>
+                  </div>
+                ) : (
+                  <span>Confirmar y Guardar Lote</span>
+                )}
               </button>
             </div>
           )}
@@ -857,12 +868,6 @@ export const BankManagement = () => {
           </div>
         </div>
       </section>
-
-      {/* Protocol Memo */}
-      <div className={styles.protocolMemo}>
-        <ShieldCheck size={16} className={styles.protocolIcon} />
-        <p><strong>Protocolo de Ingestión Automatizada (OCR SAT):</strong> Todos los registros insertados en este workspace son inyectados con `ingestion_source = 'daily_screenshot_assisted'`. Para mantener la integridad fiscal, las discrepancias en sumas de control con el Libro Mayor del SAT serán reportadas automáticamente al Auditor en Jefe.</p>
-      </div>
     </div>
   );
 };

@@ -8,10 +8,10 @@ import {
   AlertTriangle, 
   Loader2, 
   X, 
-  CloudUpload, 
-  Folder, 
   Filter,
-  Download
+  Download,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import styles from './Reconciliation.module.scss';
 
@@ -31,9 +31,9 @@ export const Reconciliation = () => {
   const [selectedException, setSelectedException] = useState<BankTransaction | null>(null);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>('');
   
-  // Scanning overlay simulator
-  const [isScanning, setIsScanning] = useState(false);
-  const [scanProgress, setScanProgress] = useState(0);
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const itemsPerPage = 8;
 
   // Operations
   const [isProcessing, setIsProcessing] = useState(false);
@@ -43,7 +43,6 @@ export const Reconciliation = () => {
     if (!isAuthorized) return;
     fetchClients();
     fetchBank({
-      filters: [{ column: 'is_reconciled', operator: 'eq', value: false }],
       sort: { column: 'transaction_date', direction: 'desc' }
     });
     fetchBilling({
@@ -54,7 +53,6 @@ export const Reconciliation = () => {
 
   const loadUnreconciledData = () => {
     fetchBank({
-      filters: [{ column: 'is_reconciled', operator: 'eq', value: false }],
       sort: { column: 'transaction_date', direction: 'desc' }
     });
     fetchBilling({
@@ -65,48 +63,64 @@ export const Reconciliation = () => {
 
   // Dynamic success rate based on historical data
   const dynamicSuccessRate = useMemo(() => {
-    return 98.4;
-  }, []);
+    const total = bankTransactions.length;
+    if (total === 0) return '100.0';
+    const reconciled = bankTransactions.filter(tx => tx.is_reconciled).length;
+    return ((reconciled / total) * 100).toFixed(1);
+  }, [bankTransactions]);
 
   // Classify exceptions from bank transactions
   const exceptions = useMemo(() => {
-    return bankTransactions.map(tx => {
-      const desc = tx.description?.toUpperCase() || '';
-      let exceptionType: 'Orphan Transaction' | 'Missing Invoice' | 'Amount Mismatch' = 'Missing Invoice';
-      let exceptionDetail = 'Payment received without XML linkage';
-      let severity: 'High' | 'Medium' | 'Low' = 'Medium';
+    return bankTransactions
+      .filter(tx => !tx.is_reconciled)
+      .map(tx => {
+        const desc = tx.description?.toUpperCase() || '';
+        let exceptionType: 'Orphan Transaction' | 'Missing Invoice' | 'Amount Mismatch' = 'Missing Invoice';
+        let exceptionDetail = 'Payment received without XML linkage';
+        let severity: 'High' | 'Medium' | 'Low' = 'Medium';
 
-      if (tx.amount < 0) {
-        exceptionType = 'Orphan Transaction';
-        exceptionDetail = 'Outflow lacking matching opex invoice';
-        severity = 'High';
-        if (desc.includes('COMISION') || desc.includes('FEE') || desc.includes('IVA') || desc.includes('MANTENIMIENTO')) {
-          exceptionDetail = 'System fee - Standalone banking charge';
+        if (tx.amount < 0) {
+          exceptionType = 'Orphan Transaction';
+          exceptionDetail = 'Outflow lacking matching opex invoice';
           severity = 'High';
-        } else if (desc.includes('RETIRO') || desc.includes('ATM')) {
-          exceptionDetail = 'Cash withdrawal - Missing Receipt';
-          severity = 'High';
+          if (desc.includes('COMISION') || desc.includes('FEE') || desc.includes('IVA') || desc.includes('MANTENIMIENTO')) {
+            exceptionDetail = 'System fee - Standalone banking charge';
+            severity = 'High';
+          } else if (desc.includes('RETIRO') || desc.includes('ATM')) {
+            exceptionDetail = 'Cash withdrawal - Missing Receipt';
+            severity = 'High';
+          }
+        } else {
+          // Look for close matching billing record (same client/reference or close amount)
+          const closeAmountRecord = billingRecords.find(bill => 
+            Math.abs(Math.abs(Number(bill.amount_gross)) - Math.abs(Number(tx.amount))) < 50
+          );
+          if (closeAmountRecord && Math.abs(Number(closeAmountRecord.amount_gross)) !== Math.abs(Number(tx.amount))) {
+            exceptionType = 'Amount Mismatch';
+            exceptionDetail = `Bank: $${Math.abs(Number(tx.amount))} vs XML: $${Math.abs(Number(closeAmountRecord.amount_gross))}`;
+            severity = 'Low';
+          }
         }
-      } else {
-        // Look for close matching billing record (same client/reference or close amount)
-        const closeAmountRecord = billingRecords.find(bill => 
-          Math.abs(Math.abs(Number(bill.amount_gross)) - Math.abs(Number(tx.amount))) < 50
-        );
-        if (closeAmountRecord && Math.abs(Number(closeAmountRecord.amount_gross)) !== Math.abs(Number(tx.amount))) {
-          exceptionType = 'Amount Mismatch';
-          exceptionDetail = `Bank: $${Math.abs(Number(tx.amount))} vs XML: $${Math.abs(Number(closeAmountRecord.amount_gross))}`;
-          severity = 'Low';
-        }
-      }
 
-      return {
-        ...tx,
-        exceptionType,
-        exceptionDetail,
-        severity
-      };
-    });
+        return {
+          ...tx,
+          exceptionType,
+          exceptionDetail,
+          severity
+        };
+      });
   }, [bankTransactions, billingRecords]);
+
+  // Paginated Exceptions
+  const paginatedExceptions = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return exceptions.slice(startIndex, startIndex + itemsPerPage);
+  }, [exceptions, currentPage]);
+
+  // Reset page when exceptions list changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [exceptions.length]);
 
   // Adjustments Drawer Handlers
   const handleOpenDrawer = (tx: BankTransaction) => {
@@ -187,66 +201,7 @@ export const Reconciliation = () => {
     }
   };
 
-  // 3. Re-Trigger Auto-Scan
-  const handleReTriggerAutoScan = () => {
-    setIsScanning(true);
-    setScanProgress(0);
 
-    const interval = setInterval(() => {
-      setScanProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setTimeout(async () => {
-            await executeAutoScanLogic();
-            setIsScanning(false);
-          }, 300);
-          return 100;
-        }
-        return prev + 20;
-      });
-    }, 150);
-  };
-
-  const executeAutoScanLogic = async () => {
-    try {
-      let matchCount = 0;
-      
-      for (const tx of bankTransactions) {
-        if (tx.is_reconciled) continue;
-
-        // Search for matching billing record (gross amount == absolute bank amount, date window +/- 5 days)
-        const match = billingRecords.find(bill => {
-          if (bill.is_reconciled) return false;
-          
-          const amountMatch = Math.abs(Number(bill.amount_gross)) === Math.abs(Number(tx.amount));
-          
-          const txDate = new Date(tx.transaction_date);
-          const billDate = new Date(bill.operation_date || bill.created_at);
-          const diffTime = Math.abs(txDate.getTime() - billDate.getTime());
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-          
-          return amountMatch && diffDays <= 5;
-        });
-
-        if (match) {
-          // Link them in database
-          await updateBilling(match.id, {
-            is_reconciled: true,
-            bank_transaction_id: tx.id
-          });
-          await updateBank(tx.id, {
-            is_reconciled: true
-          });
-          matchCount++;
-        }
-      }
-
-      alert(`Escaneo completado. Se auto-reconciliaron ${matchCount} registros con éxito.`);
-      loadUnreconciledData();
-    } catch (err: any) {
-      alert(`Error durante el auto-escaneo: ${err.message}`);
-    }
-  };
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('es-MX', {
@@ -278,42 +233,12 @@ export const Reconciliation = () => {
     <div className={styles.container}>
       {/* Top Header Hub */}
       <section className={styles.topHub}>
-        <div className={styles.hubGrid}>
-          {/* Bank Ingestion Asset card */}
-          <div 
-            className={styles.hubCard}
-            onClick={() => navigate('/bank')}
-          >
-            <div className={styles.hubCardIconWrapper}>
-              <CloudUpload size={20} className={styles.primaryIcon} />
-            </div>
-            <div className={styles.hubCardText}>
-              <h3>Bank Assets</h3>
-              <p>Cargar estados de cuenta y capturas bancarias</p>
-            </div>
-          </div>
-
-          {/* Contpaqi Ingestion Asset card */}
-          <div 
-            className={styles.hubCard}
-            onClick={() => navigate('/vault')}
-          >
-            <div className={styles.hubCardIconWrapper}>
-              <Folder size={20} className={styles.secondaryIcon} />
-            </div>
-            <div className={styles.hubCardText}>
-              <h3>Contpaqi Hub</h3>
-              <p>Importar paquetes de XML contables (SAT)</p>
-            </div>
-          </div>
-        </div>
-
         {/* Success Rate Stats gauge card */}
         <div className={styles.metricsCard}>
-          <p className={styles.metricLabel}>AUTOMATED MATCH SUCCESS RATE</p>
+          <p className={styles.metricLabel}>TASA DE CONCILIACIÓN AUTOMÁTICA</p>
           <div className={styles.metricValGroup}>
             <span className={styles.metricValue}>{dynamicSuccessRate}%</span>
-            <span className={styles.metricBadge}>+0.2% vs prev</span>
+            <span className={styles.metricBadge}>+0.2% vs anterior</span>
           </div>
           <div className={styles.progressRail}>
             <div className={styles.progressBar} style={{ width: `${dynamicSuccessRate}%` }} />
@@ -327,18 +252,11 @@ export const Reconciliation = () => {
           <div className={styles.workspaceTitleGroup}>
             <h4>EXCEPCIONES Y DISCREPANCIAS PENDIENTES</h4>
             {exceptions.length > 0 && (
-              <span className={styles.criticalBadge}>{exceptions.length} CRITICAL ITEMS</span>
+              <span className={styles.criticalBadge}>{exceptions.length} ELEMENTOS CRÍTICOS</span>
             )}
           </div>
           
           <div className={styles.headerActions}>
-            <button 
-              className={styles.headerBtn} 
-              onClick={handleReTriggerAutoScan}
-              disabled={isScanning}
-            >
-              {isScanning ? <Loader2 className={styles.spin} size={14} /> : 'EJECUTAR AUTO-ESCANEO'}
-            </button>
             <button className={styles.iconActionBtn}><Filter size={16} /></button>
             <button className={styles.iconActionBtn}><Download size={16} /></button>
           </div>
@@ -365,24 +283,38 @@ export const Reconciliation = () => {
                     <span>Buscando inconsistencias y discrepancias...</span>
                   </td>
                 </tr>
-              ) : exceptions.length === 0 ? (
+              ) : paginatedExceptions.length === 0 ? (
                 <tr>
                   <td colSpan={6} className={styles.tableEmpty}>
                     <span>No hay discrepancias contables. Conciliación automática al 100%.</span>
                   </td>
                 </tr>
               ) : (
-                exceptions.map(exc => (
+                paginatedExceptions.map(exc => (
                   <tr key={exc.id}>
                     <td className={styles.dateCell}>{exc.transaction_date}</td>
                     <td>
                       <span className={`${styles.exceptionBadge} ${styles[exc.exceptionType.replace(' ', '')]}`}>
-                        {exc.exceptionType}
+                        {exc.exceptionType === 'Orphan Transaction' 
+                          ? 'Transacción Huérfana' 
+                          : exc.exceptionType === 'Missing Invoice' 
+                          ? 'Factura Faltante' 
+                          : 'Diferencia de Monto'}
                       </span>
                     </td>
                     <td>
                       <div className={styles.entityName}>{exc.description}</div>
-                      <span className={styles.entitySub}>{exc.exceptionDetail}</span>
+                      <span className={styles.entitySub}>
+                        {exc.exceptionDetail === 'Payment received without XML linkage' 
+                          ? 'Pago recibido sin vínculo XML'
+                          : exc.exceptionDetail === 'Outflow lacking matching opex invoice'
+                          ? 'Egreso sin factura de gastos correspondiente'
+                          : exc.exceptionDetail === 'System fee - Standalone banking charge'
+                          ? 'Comisión del sistema - Cargo bancario independiente'
+                          : exc.exceptionDetail === 'Cash withdrawal - Missing Receipt'
+                          ? 'Retiro de efectivo - Falta comprobante'
+                          : exc.exceptionDetail}
+                      </span>
                     </td>
                     <td className={`${styles.amountCell} ${exc.amount >= 0 ? styles.positiveText : styles.negativeText}`}>
                       {exc.amount >= 0 ? '+' : '-'}
@@ -407,22 +339,35 @@ export const Reconciliation = () => {
             </tbody>
           </table>
         </div>
-      </div>
 
-      {/* Re-Trigger Auto-scan simulator loading screen */}
-      {isScanning && (
-        <div className={styles.scanningOverlay}>
-          <div className={styles.scanningModal}>
-            <Loader2 className={styles.spin} size={48} />
-            <h2>Scrutinizing Ledger Tables...</h2>
-            <p>Re-running matching heuristics on index balances.</p>
-            <div className={styles.scanProgressBar}>
-              <div className={styles.scanProgressFill} style={{ width: `${scanProgress}%` }} />
+        {/* Table Pagination Footer */}
+        {exceptions.length > 0 && (
+          <div className={styles.tableFooter}>
+            <p className={styles.paginationText}>
+              Mostrando {Math.min(exceptions.length, currentPage * itemsPerPage)} de {exceptions.length} excepciones
+            </p>
+            <div className={styles.paginationButtons}>
+              <button 
+                className={styles.pagerBtn} 
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <span style={{ fontSize: '12px', fontWeight: 'bold', alignSelf: 'center', padding: '0 8px', color: '#475569' }}>
+                {currentPage}
+              </span>
+              <button 
+                className={styles.pagerBtn} 
+                disabled={currentPage * itemsPerPage >= exceptions.length}
+                onClick={() => setCurrentPage(prev => prev + 1)}
+              >
+                <ChevronRight size={16} />
+              </button>
             </div>
-            <span className={styles.scanPercent}>{scanProgress}%</span>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Adjustments Side Drawer Overlay */}
       {selectedException && (
@@ -430,8 +375,8 @@ export const Reconciliation = () => {
           <div className={styles.drawerContainer} onClick={e => e.stopPropagation()}>
             <header className={styles.drawerHeader}>
               <div>
-                <h2>Resolution Panel</h2>
-                <p>Auditor overrides for unmatched cash movements</p>
+                <h2>Panel de Resolución</h2>
+                <p>Anulaciones de auditores para movimientos de efectivo no coincidentes</p>
               </div>
               <button className={styles.closeBtn} onClick={handleCloseDrawer}>
                 <X size={20} />
@@ -463,7 +408,7 @@ export const Reconciliation = () => {
 
               {/* Adjustment Action 1: Force Direct Adjustment */}
               <div className={styles.adjustmentBlock}>
-                <h3>1. Force Direct Adjustment</h3>
+                <h3>1. Ajuste Directo Forzado</h3>
                 <p>Clasifique esta partida como un gasto contable ordinario o egreso sin comprobante fiscal de nómina (ej. tarifas bancarias).</p>
                 <button 
                   className={styles.actionBtn}
@@ -476,7 +421,7 @@ export const Reconciliation = () => {
 
               {/* Adjustment Action 2: Link with Partial Variance */}
               <div className={styles.adjustmentBlock}>
-                <h3>2. Link with Partial Variance</h3>
+                <h3>2. Vincular con Varianza Parcial</h3>
                 <p>Vincule esta transacción a una factura XML existente. Reste/asocie la varianza al fondo de garantía (retainer) del cliente.</p>
                 
                 <div className={styles.selectInvoiceGroup}>
