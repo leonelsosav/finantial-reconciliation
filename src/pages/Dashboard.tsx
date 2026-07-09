@@ -42,6 +42,10 @@ export const Dashboard = () => {
   const [timeframe, setTimeframe] = useState<'30days' | '7days' | '90days' | 'currentMonth'>('30days');
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [showExplainers, setShowExplainers] = useState<boolean>(false);
+  const [reconciliationModal, setReconciliationModal] = useState<{
+    isOpen: boolean;
+    type: 'utility' | 'opex' | 'anomalies' | null;
+  }>({ isOpen: false, type: null });
 
   // Drawer states for editing client provisions
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -900,6 +904,143 @@ export const Dashboard = () => {
     }
   };
 
+  const renderReconciliationDetailModal = () => {
+    if (!reconciliationModal.isOpen || !reconciliationModal.type) return null;
+
+    let title = '';
+    let contentTable = null;
+    let totalAmount = 0;
+
+    if (reconciliationModal.type === 'utility') {
+      title = 'Detalle de Utilidades Real (Comisiones)';
+      const utilityRecords = billingRecords.filter(br => br.is_reconciled && Number(br.amount_commission || 0) > 0);
+      totalAmount = utilityRecords.reduce((sum, r) => sum + Number(r.amount_commission || 0), 0);
+
+      contentTable = (
+        <table className={styles.modalTable}>
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Cliente</th>
+              <th>Descripción</th>
+              <th className={styles.numCol}>Monto Bruto</th>
+              <th className={styles.numCol}>Comisión</th>
+            </tr>
+          </thead>
+          <tbody>
+            {utilityRecords.length === 0 ? (
+              <tr>
+                <td colSpan={5} className={styles.emptyCell}>No hay comisiones reconciliadas en este período.</td>
+              </tr>
+            ) : (
+              utilityRecords.map(r => (
+                <tr key={r.id}>
+                  <td>{r.operation_date}</td>
+                  <td>{clients.find(c => c.id === r.client_id)?.name || 'Cliente'}</td>
+                  <td>{r.description || 'Comisión por Nómina'}</td>
+                  <td className={styles.numCol}>{formatCurrency(r.amount_gross)}</td>
+                  <td className={`${styles.numCol} ${styles.positive}`}>{formatCurrency(r.amount_commission)}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      );
+    } else if (reconciliationModal.type === 'opex') {
+      title = 'Detalle de Gastos Operativos (Opex)';
+      const opexTxs = filteredBankTxs.filter(tx => tx.transaction_category === 'corporate_opex');
+      totalAmount = opexTxs.reduce((sum, tx) => sum + Math.abs(Number(tx.amount || 0)), 0);
+
+      contentTable = (
+        <table className={styles.modalTable}>
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Referencia / Banco</th>
+              <th>Descripción</th>
+              <th className={styles.numCol}>Monto Gasto</th>
+            </tr>
+          </thead>
+          <tbody>
+            {opexTxs.length === 0 ? (
+              <tr>
+                <td colSpan={4} className={styles.emptyCell}>No hay gastos operativos en este período.</td>
+              </tr>
+            ) : (
+              opexTxs.map(tx => (
+                <tr key={tx.id}>
+                  <td>{tx.transaction_date}</td>
+                  <td>{tx.reference_number || 'N/A'}</td>
+                  <td>{tx.description || 'Gasto Operativo'}</td>
+                  <td className={`${styles.numCol} ${styles.negative}`}>-{formatCurrency(tx.amount)}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      );
+    } else if (reconciliationModal.type === 'anomalies') {
+      title = 'Detalle de Transacciones por Conciliar';
+      const unreconciledTxs = filteredBankTxs.filter(tx => !tx.is_reconciled);
+      totalAmount = unreconciledTxs.reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+
+      contentTable = (
+        <table className={styles.modalTable}>
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Referencia</th>
+              <th>Descripción</th>
+              <th className={styles.numCol}>Monto</th>
+            </tr>
+          </thead>
+          <tbody>
+            {unreconciledTxs.length === 0 ? (
+              <tr>
+                <td colSpan={4} className={styles.emptyCell}>No hay transacciones pendientes por conciliar.</td>
+              </tr>
+            ) : (
+              unreconciledTxs.map(tx => (
+                <tr key={tx.id}>
+                  <td>{tx.transaction_date}</td>
+                  <td>{tx.reference_number || 'N/A'}</td>
+                  <td>{tx.description || 'Transacción Bancaria'}</td>
+                  <td className={`${styles.numCol} ${Number(tx.amount) >= 0 ? styles.positive : styles.negative}`}>
+                    {Number(tx.amount) >= 0 ? '+' : ''}{formatCurrency(tx.amount)}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      );
+    }
+
+    return (
+      <div className={styles.modalOverlay} onClick={() => setReconciliationModal({ isOpen: false, type: null })}>
+        <div className={styles.modalContent} onClick={e => e.stopPropagation()}>
+          <div className={styles.modalHeader}>
+            <h3>{title}</h3>
+            <button className={styles.closeBtn} onClick={() => setReconciliationModal({ isOpen: false, type: null })}>
+              <X size={20} />
+            </button>
+          </div>
+          
+          <div className={styles.modalBody}>
+            {contentTable}
+          </div>
+
+          <div className={styles.modalFooter}>
+            <span className={styles.footerLabel}>Total Consolidado:</span>
+            <span className={`${styles.footerVal} ${reconciliationModal.type === 'opex' ? styles.negative : reconciliationModal.type === 'utility' ? styles.positive : ''}`}>
+              {reconciliationModal.type === 'opex' ? '-' : ''}{formatCurrency(totalAmount)}
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Access Wall
   if (!isOwner) {
     return (
@@ -1343,7 +1484,11 @@ export const Dashboard = () => {
           {/* Fila Doble de Desglose de Caja Propia */}
           <div className={styles.treeRow} style={{ gap: '16px' }}>
             {/* Utilidad Neta */}
-            <div className={`${styles.treeNode} ${styles.highlighted}`} style={{ flex: 1 }}>
+            <div 
+              className={`${styles.treeNode} ${styles.highlighted} ${styles.clickableTreeNode}`} 
+              style={{ flex: 1 }}
+              onClick={() => setReconciliationModal({ isOpen: true, type: 'utility' })}
+            >
               <div className={styles.nodeMeta}>
                 <div className={styles.nodeTitleGroup}>
                   <span className={styles.nodeLabel}>Ingresos Corporativos</span>
@@ -1361,7 +1506,11 @@ export const Dashboard = () => {
             </div>
 
             {/* Opex */}
-            <div className={`${styles.treeNode} ${styles.negative}`} style={{ flex: 1 }}>
+            <div 
+              className={`${styles.treeNode} ${styles.negative} ${styles.clickableTreeNode}`} 
+              style={{ flex: 1 }}
+              onClick={() => setReconciliationModal({ isOpen: true, type: 'opex' })}
+            >
               <div className={styles.nodeMeta}>
                 <div className={styles.nodeTitleGroup}>
                   <span className={styles.nodeLabel}>Gastos Corporativos</span>
@@ -1379,7 +1528,11 @@ export const Dashboard = () => {
             </div>
 
             {/* Pendiente/Anomalías */}
-            <div className={styles.treeNode} style={{ flex: 1 }}>
+            <div 
+              className={`${styles.treeNode} ${styles.clickableTreeNode}`} 
+              style={{ flex: 1 }}
+              onClick={() => setReconciliationModal({ isOpen: true, type: 'anomalies' })}
+            >
               <div className={styles.nodeMeta}>
                 <div className={styles.nodeTitleGroup}>
                   <span className={styles.nodeLabel}>Ajuste Temporal</span>
@@ -1509,6 +1662,7 @@ export const Dashboard = () => {
           </div>
         </div>
       )}
+      {renderReconciliationDetailModal()}
     </div>
   );
 };
