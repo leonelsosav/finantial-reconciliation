@@ -7,7 +7,6 @@ import { DateEngine } from '../utils/DateEngine';
 import type { BillingRecord, Client, InternalCompany } from '../types';
 import { 
   CloudUpload, 
-  Lock, 
   ShieldCheck, 
   Search, 
   FileText, 
@@ -60,6 +59,10 @@ export const Vault = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'VERIFIED' | 'PROCESSED'>('ALL');
   const [showFilterMenu, setShowFilterMenu] = useState(false);
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const itemsPerPage = 8;
 
   // Fetch initial data
   useEffect(() => {
@@ -128,6 +131,17 @@ export const Vault = () => {
       return matchesSearch && matchesStatus;
     });
   }, [uploadGroups, searchQuery, statusFilter]);
+
+  // Paginated groups for table display
+  const paginatedGroups = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredGroups.slice(start, start + itemsPerPage);
+  }, [filteredGroups, currentPage]);
+
+  // Reset pagination on search or status change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter]);
 
   // Drag & Drop handlers
   const handleDrag = (e: React.DragEvent) => {
@@ -331,9 +345,9 @@ export const Vault = () => {
           <div className={styles.breadcrumbs}>
             <span>Inicio</span>
             <span className={styles.separator}>/</span>
-            <span className={styles.activePage}>Ingestión de Facturas</span>
+            <span className={styles.activePage}>Carga de Facturas</span>
           </div>
-          <h1 className={styles.pageTitle}>Bóveda de Ingestión de Facturas</h1>
+          <h1 className={styles.pageTitle}>Carga de Facturas</h1>
           <p className={styles.pageSub}>Pasarela de validación para XML de CONTPAQi® y registros contables Excel.</p>
         </div>
         <div className={styles.headerActions}>
@@ -416,19 +430,8 @@ export const Vault = () => {
           </div>
         </section>
 
-        {/* Security Alert & Session Queue Stats */}
+        {/* Session Queue Stats */}
         <section className={styles.statsPanel}>
-          {/* Security Banner */}
-          <div className={styles.securityAlert}>
-            <div className={styles.alertIcon}>
-              <Lock size={20} />
-            </div>
-            <div className={styles.alertText}>
-              <h4>Restricción de Seguridad: Registros Inmutables</h4>
-              <p>La edición manual de facturas parseadas está desactivada por política de auditoría fiscal. Cualquier discrepancia debe corregirse en el origen de CONTPAQi® o SAT.</p>
-            </div>
-          </div>
-
           {/* Session Queue Counts */}
           <div className={styles.statsCardGrid}>
             <div className={styles.statsCard}>
@@ -537,7 +540,7 @@ export const Vault = () => {
                   </td>
                 </tr>
               ) : (
-                filteredGroups.map((group, idx) => (
+                paginatedGroups.map((group, idx) => (
                   <tr key={group.filename} className={idx % 2 === 1 ? styles.altRow : ''}>
                     <td className={styles.timestampCell}>{group.timestamp}</td>
                     <td>
@@ -572,21 +575,29 @@ export const Vault = () => {
 
         <div className={styles.tableFooter}>
           <p className={styles.paginationText}>
-            Mostrando {filteredGroups.length} lotes de carga
+            Mostrando {Math.min(filteredGroups.length, currentPage * itemsPerPage)} de {filteredGroups.length} lotes de carga
           </p>
           <div className={styles.paginationButtons}>
-            <button className={styles.pagerBtn} disabled><ChevronLeft size={16} /></button>
-            <button className={`${styles.pagerBtn} ${styles.active}`}>1</button>
-            <button className={styles.pagerBtn} disabled><ChevronRight size={16} /></button>
+            <button 
+              className={styles.pagerBtn} 
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span style={{ fontSize: '12px', fontWeight: 'bold', alignSelf: 'center', padding: '0 8px' }}>
+              {currentPage}
+            </span>
+            <button 
+              className={styles.pagerBtn} 
+              disabled={currentPage * itemsPerPage >= filteredGroups.length}
+              onClick={() => setCurrentPage(prev => prev + 1)}
+            >
+              <ChevronRight size={16} />
+            </button>
           </div>
         </div>
       </section>
-
-      {/* Access protocol memo banner */}
-      <div className={styles.memoBanner}>
-        <AlertCircle size={16} className={styles.memoIcon} />
-        <p><strong>Protocolo Estricto de Separación Contable (RBAC):</strong> Los balances de caja bancarios, cuentas de provisión agregadas y comisiones cobradas están estrictamente excluidos de esta vista. Los operadores de facturación tienen un entorno enfocado exclusivamente en la carga e integridad de CFDI.</p>
-      </div>
 
       {/* Sidebar drawer overlay for document line items */}
       {isDrawerOpen && selectedGroup && (
