@@ -17,7 +17,9 @@ import {
   ChevronRight,
   ShieldAlert,
   X,
-  ChevronsUpDown
+  ChevronsUpDown,
+  HelpCircle,
+  Info
 } from 'lucide-react';
 import styles from './Dashboard.module.scss';
 import demoData from '../assets/data.json';
@@ -39,6 +41,7 @@ export const Dashboard = () => {
 
   const [timeframe, setTimeframe] = useState<'30days' | '7days' | '90days' | 'currentMonth'>('30days');
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [showExplainers, setShowExplainers] = useState<boolean>(false);
 
   // Drawer states for editing client provisions
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -159,6 +162,25 @@ export const Dashboard = () => {
     activeEscrow,
     unreconciledBankTxsCount
   } = useFinancials(filteredBillingRecords, filteredBankTxs, processedClients);
+
+  // 1. Corporate OPEX in the current timeframe
+  const corporateOpex = useMemo(() => {
+    return filteredBankTxs
+      .filter(tx => tx.transaction_category === 'corporate_opex')
+      .reduce((sum, tx) => sum + Math.abs(Number(tx.amount || 0)), 0);
+  }, [filteredBankTxs]);
+
+  // 2. Sum of pending/unreconciled bank transactions in the current timeframe
+  const pendingReconciliationAmount = useMemo(() => {
+    return filteredBankTxs
+      .filter(tx => !tx.is_reconciled)
+      .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+  }, [filteredBankTxs]);
+
+  // 3. Own Corporate Treasury Balance (Caja Propia de la Empresa)
+  const ownCompanyCash = useMemo(() => {
+    return Math.max(0, consolidatedTreasury - activeEscrow);
+  }, [consolidatedTreasury, activeEscrow]);
 
   // Chart timeline builder: Outflow vs Inflow (30D Timeline)
   const chartDays = useMemo(() => {
@@ -1219,6 +1241,192 @@ export const Dashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* Sección de Conciliación de Caja y Utilidades */}
+      <section className={styles.reconciliationSection}>
+        <div className={styles.reconciliationHeader}>
+          <div>
+            <h3>Conciliación de Caja y Utilidades</h3>
+            <p>Desglose matemático y explicativo de la procedencia de los fondos corporativos</p>
+          </div>
+          <button 
+            className={styles.formulaBtn}
+            onClick={() => setShowExplainers(!showExplainers)}
+          >
+            <Info size={14} />
+            {showExplainers ? 'Ocultar Explicaciones' : 'Mostrar Explicaciones'}
+          </button>
+        </div>
+
+        <div className={styles.waterfallTree}>
+          {/* Nodo 1: Flujo de Caja Total */}
+          <div className={styles.treeRow}>
+            <div className={styles.treeNode}>
+              <div className={styles.nodeMeta}>
+                <div className={styles.nodeTitleGroup}>
+                  <span className={styles.nodeLabel}>Punto de Partida</span>
+                  <div className={styles.helpIcon} title="El saldo consolidado físico de todas tus cuentas bancarias, excluyendo traspasos entre cuentas propias.">
+                    <HelpCircle size={14} />
+                  </div>
+                </div>
+                <span className={styles.nodeName}>Flujo de Caja Bancario Total</span>
+                <span className={styles.nodeDesc}>Total de dinero real en cuentas corporativas</span>
+              </div>
+              <div className={styles.nodeValueGroup}>
+                <span className={styles.nodeValue}>{formatCurrency(consolidatedTreasury)}</span>
+                <span className={`${styles.nodeOp} ${styles.opEqual}`}>Caja Base</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Conector 1 */}
+          <div className={styles.treeConnector}>
+            <div className={styles.connectorLine}></div>
+            <div className={styles.connectorIcon}>➖</div>
+            <div className={styles.connectorLine}></div>
+          </div>
+
+          {/* Nodo 2: Retainers de Clientes */}
+          <div className={styles.treeRow}>
+            <div className={`${styles.treeNode} ${styles.negative}`}>
+              <div className={styles.nodeMeta}>
+                <div className={styles.nodeTitleGroup}>
+                  <span className={styles.nodeLabel}>Pasivo / Garantías</span>
+                  <div className={styles.helpIcon} title="Fondo en garantía aportado por tus clientes para la dispersión de sus nóminas. Está en tu banco, pero les pertenece a ellos.">
+                    <HelpCircle size={14} />
+                  </div>
+                </div>
+                <span className={styles.nodeName}>Retainers y Garantías de Clientes</span>
+                <span className={styles.nodeDesc}>Provisión acumulada bajo custodia (Escrow)</span>
+              </div>
+              <div className={styles.nodeValueGroup}>
+                <span className={`${styles.nodeValue} ${styles.negative}`}>-{formatCurrency(activeEscrow)}</span>
+                <span className={`${styles.nodeOp} ${styles.opSub}`}>Restar</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Conector 2 */}
+          <div className={styles.treeConnector}>
+            <div className={styles.connectorLine}></div>
+            <div className={styles.connectorIcon}>🟰</div>
+            <div className={styles.connectorLine}></div>
+          </div>
+
+          {/* Nodo 3: Caja Propia */}
+          <div className={styles.treeRow}>
+            <div className={`${styles.treeNode} ${styles.highlighted}`}>
+              <div className={styles.nodeMeta}>
+                <div className={styles.nodeTitleGroup}>
+                  <span className={styles.nodeLabel}>Tesorería Propia</span>
+                  <div className={styles.helpIcon} title="El saldo de caja que pertenece enteramente a la empresa después de separar las provisiones de los clientes.">
+                    <HelpCircle size={14} />
+                  </div>
+                </div>
+                <span className={styles.nodeName}>Caja Útil y Libre de la Empresa</span>
+                <span className={styles.nodeDesc}>Capital de trabajo libre para operación propia</span>
+              </div>
+              <div className={styles.nodeValueGroup}>
+                <span className={`${styles.nodeValue} ${styles.positive}`}>{formatCurrency(ownCompanyCash)}</span>
+                <span className={`${styles.nodeOp} ${styles.opEqual}`}>Resultado</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Conector 3 */}
+          <div className={styles.treeConnector}>
+            <div className={styles.connectorLine}></div>
+            <div className={styles.connectorIcon}>➕ / ➖</div>
+            <div className={styles.connectorLine}></div>
+          </div>
+
+          {/* Fila Doble de Desglose de Caja Propia */}
+          <div className={styles.treeRow} style={{ gap: '16px' }}>
+            {/* Utilidad Neta */}
+            <div className={`${styles.treeNode} ${styles.highlighted}`} style={{ flex: 1 }}>
+              <div className={styles.nodeMeta}>
+                <div className={styles.nodeTitleGroup}>
+                  <span className={styles.nodeLabel}>Ingresos Corporativos</span>
+                  <div className={styles.helpIcon} title="Las comisiones acumuladas ganadas por la dispersión de nóminas ya reconciliadas.">
+                    <HelpCircle size={14} />
+                  </div>
+                </div>
+                <span className={styles.nodeName}>Utilidad Neta Real</span>
+                <span className={styles.nodeDesc}>Comisiones netas por nóminas liquidadas</span>
+              </div>
+              <div className={styles.nodeValueGroup}>
+                <span className={`${styles.nodeValue} ${styles.positive}`}>{formatCurrency(netUtility)}</span>
+                <span className={`${styles.nodeOp} ${styles.opAdd}`}>Ganancia</span>
+              </div>
+            </div>
+
+            {/* Opex */}
+            <div className={`${styles.treeNode} ${styles.negative}`} style={{ flex: 1 }}>
+              <div className={styles.nodeMeta}>
+                <div className={styles.nodeTitleGroup}>
+                  <span className={styles.nodeLabel}>Gastos Corporativos</span>
+                  <div className={styles.helpIcon} title="Egresos operativos reales de la empresa, tales como pago de comisiones bancarias, software o impuestos.">
+                    <HelpCircle size={14} />
+                  </div>
+                </div>
+                <span className={styles.nodeName}>Gastos Operativos (Opex)</span>
+                <span className={styles.nodeDesc}>Gastos administrativos pagados desde banco</span>
+              </div>
+              <div className={styles.nodeValueGroup}>
+                <span className={`${styles.nodeValue} ${styles.negative}`}>-{formatCurrency(corporateOpex)}</span>
+                <span className={`${styles.nodeOp} ${styles.opSub}`}>Gasto</span>
+              </div>
+            </div>
+
+            {/* Pendiente/Anomalías */}
+            <div className={styles.treeNode} style={{ flex: 1 }}>
+              <div className={styles.nodeMeta}>
+                <div className={styles.nodeTitleGroup}>
+                  <span className={styles.nodeLabel}>Ajuste Temporal</span>
+                  <div className={styles.helpIcon} title="Transacciones de banco (depósitos o retiros) pendientes de conciliar con facturas o contratos.">
+                    <HelpCircle size={14} />
+                  </div>
+                </div>
+                <span className={styles.nodeName}>Flujo Pendiente / Anomalías</span>
+                <span className={styles.nodeDesc}>Movimientos sin factura asignada</span>
+              </div>
+              <div className={styles.nodeValueGroup}>
+                <span className={styles.nodeValue}>
+                  {pendingReconciliationAmount >= 0 ? '+' : ''}
+                  {formatCurrency(pendingReconciliationAmount)}
+                </span>
+                <span className={styles.nodeOp} style={{ backgroundColor: '#f1f5f9', color: '#475569' }}>
+                  {pendingReconciliationAmount >= 0 ? 'Depósito' : 'Retiro'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Collapsible Explainer Box */}
+        {showExplainers && (
+          <div className={styles.explainerBox}>
+            <h4>Fórmulas de Conciliación Financiera</h4>
+            <p>
+              Para mantener la salud de tu tesorería, el sistema concilia de manera transparente la diferencia entre lo que ves en tu banco y tus ganancias reales.
+            </p>
+            <div className={styles.formulaGrid}>
+              <div className={styles.formulaCard}>
+                <h5>1. Caja Libre de la Empresa</h5>
+                <code>Caja Libre = Flujo de Caja Total - Saldos de Retainer (Garantía)</code>
+              </div>
+              <div className={styles.formulaCard}>
+                <h5>2. Cuadrante de Caja Útil</h5>
+                <code>Caja Libre = Utilidad Neta Real - Gastos (Opex) ± Flujo por Conciliar</code>
+              </div>
+              <div className={styles.formulaCard}>
+                <h5>3. Significado de Anomalías</h5>
+                <code>Si el Flujo por Conciliar es positivo, significa que ingresó dinero al banco que aún no ha sido facturado o asignado a un cliente.</code>
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
 
       {/* Side-Drawer Overlay for Client Provisions Profile Edit */}
       {isDrawerOpen && (

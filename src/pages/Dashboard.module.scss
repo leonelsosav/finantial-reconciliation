@@ -1166,3 +1166,285 @@
   }
 }
 
+.reconciliationSection {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  margin-top: 24px;
+}
+
+.reconciliationHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #f1f5f9;
+  padding-bottom: 16px;
+  margin-bottom: 24px;
+
+  h3 {
+    font-size: 15px;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 0;
+  }
+
+  p {
+    font-size: 11px;
+    color: #64748b;
+    margin: 4px 0 0 0;
+  }
+}
+
+.formulaBtn {
+  background: none;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s;
+
+  &:hover {
+    background-color: #f8fafc;
+    border-color: #94a3b8;
+    color: #0f172a;
+  }
+}
+
+.waterfallTree {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.treeRow {
+  display: flex;
+  align-items: stretch;
+}
+
+.treeNode {
+  flex: 1;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: all 0.2s;
+  position: relative;
+
+  &:hover {
+    border-color: #cbd5e1;
+    background-color: #ffffff;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  }
+
+  &.highlighted {
+    background-color: #f0fdf4;
+    border-color: #bbf7d0;
+
+    &:hover {
+      background-color: #ffffff;
+      border-color: #86efac;
+    }
+  }
+
+  &.negative {
+    background-color: #fef2f2;
+    border-color: #fecaca;
+
+    &:hover {
+      background-color: #ffffff;
+      border-color: #fca5a5;
+    }
+  }
+}
+
+.nodeMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nodeTitleGroup {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nodeLabel {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.nodeName {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.nodeDesc {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.nodeValueGroup {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.nodeValue {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+
+  &.positive {
+    color: #10b981;
+  }
+
+  &.negative {
+    color: #ef4444;
+  }
+}
+
+.nodeOp {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+
+  &.opSub {
+    background-color: #fee2e2;
+    color: #ef4444;
+  }
+
+  &.opAdd {
+    background-color: #dcfce7;
+    color: #10b981;
+  }
+
+  &.opEqual {
+    background-color: #e0f2fe;
+    color: #0284c7;
+  }
+}
+
+.treeConnector {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  color: #94a3b8;
+  position: relative;
+
+  .connectorLine {
+    width: 2px;
+    background-color: #e2e8f0;
+    flex: 1;
+  }
+
+  .connectorIcon {
+    z-index: 2;
+    background-color: #ffffff;
+    padding: 2px;
+    border-radius: 50%;
+  }
+}
+
+.helpIcon {
+  color: #94a3b8;
+  cursor: help;
+  display: inline-flex;
+  align-items: center;
+  transition: color 0.15s;
+
+  &:hover {
+    color: #475569;
+  }
+}
+
+.explainerBox {
+  margin-top: 24px;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 20px;
+  animation: fadeIn 0.2s ease-out;
+
+  h4 {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 0 0 12px 0;
+  }
+
+  p {
+    font-size: 12px;
+    color: #475569;
+    line-height: 1.6;
+    margin: 0 0 16px 0;
+  }
+}
+
+.formulaGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.formulaCard {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 14px;
+
+  h5 {
+    font-size: 11px;
+    font-weight: 700;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 0 0 8px 0;
+  }
+
+  code {
+    display: block;
+    background-color: #f1f5f9;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: monospace;
+    color: #0f172a;
+    word-break: break-all;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+
