@@ -6,11 +6,11 @@ import { useFinancials } from '../hooks/useFinancials';
 import { supabase } from '../lib/supabase';
 import { DateEngine } from '../utils/DateEngine';
 import type { BillingRecord, BankTransaction, Client, InternalCompany, ClientGroup } from '../types';
-import { 
-  TrendingUp, 
-  Wallet, 
-  AlertTriangle, 
-  ArrowRight, 
+import {
+  TrendingUp,
+  Wallet,
+  AlertTriangle,
+  ArrowRight,
   Download,
   Percent,
   ChevronDown,
@@ -39,7 +39,7 @@ export const Dashboard = () => {
 
   const [timeframe, setTimeframe] = useState<'30days' | '7days' | '90days' | 'currentMonth'>('30days');
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
-  
+
   // Drawer states for editing client provisions
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
@@ -142,7 +142,7 @@ export const Dashboard = () => {
   const processedClients = useMemo(() => {
     return clients.map(client => {
       const clientRecords = billingRecords.filter(br => br.client_id === client.id);
-      const dynamicBalance = clientRecords.reduce((sum, r) => 
+      const dynamicBalance = clientRecords.reduce((sum, r) =>
         (r.is_reconciled && r.entry_type === 'retainer_injection') ? sum + Number(r.amount_gross || 0) : sum, 0
       );
       return {
@@ -164,7 +164,7 @@ export const Dashboard = () => {
   const chartDays = useMemo(() => {
     const today = new Date();
     const grouped: Record<string, { inflow: number; outflow: number }> = {};
-    
+
     const startDate = new Date();
     if (timeframe === '7days') {
       startDate.setDate(today.getDate() - 6);
@@ -175,15 +175,15 @@ export const Dashboard = () => {
     } else if (timeframe === 'currentMonth') {
       startDate.setDate(1);
     }
-    
+
     const startDateStr = DateEngine.getLocalYYYYMMDD(startDate);
     // Filter only client operation transactions
-    const clientOpsTxs = bankTxs.filter(tx => 
-      tx.transaction_category === 'client_operation' && 
-      tx.transaction_date >= startDateStr && 
+    const clientOpsTxs = bankTxs.filter(tx =>
+      tx.transaction_category === 'client_operation' &&
+      tx.transaction_date >= startDateStr &&
       tx.transaction_date <= todayStr
     );
-    
+
     clientOpsTxs.forEach(tx => {
       const date = tx.transaction_date;
       if (!grouped[date]) {
@@ -199,10 +199,10 @@ export const Dashboard = () => {
 
     const result: { day: string; inflow: number; outflow: number; active?: boolean }[] = [];
     const options: Intl.DateTimeFormatOptions = { month: 'short', day: '2-digit' };
-    
+
     let stepDays = 1;
     let daysToLoop = 30;
-    
+
     if (timeframe === '7days') {
       stepDays = 1;
       daysToLoop = 7;
@@ -216,15 +216,15 @@ export const Dashboard = () => {
       stepDays = Math.max(Math.ceil(today.getDate() / 10), 1);
       daysToLoop = today.getDate();
     }
-    
+
     for (let i = 0; i < daysToLoop; i += stepDays) {
       const dateObj = new Date(startDate);
       dateObj.setDate(startDate.getDate() + i);
       const dateStr = DateEngine.getLocalYYYYMMDD(dateObj);
-      
+
       let inflowSum = 0;
       let outflowSum = 0;
-      
+
       for (let k = 0; k < stepDays; k++) {
         const subDate = new Date(dateObj);
         subDate.setDate(dateObj.getDate() + k);
@@ -235,7 +235,7 @@ export const Dashboard = () => {
           outflowSum += dataForDay.outflow;
         }
       }
-      
+
       const isToday = dateStr === todayStr;
       result.push({
         day: isToday ? 'Hoy' : dateObj.toLocaleDateString('es-MX', options),
@@ -261,7 +261,7 @@ export const Dashboard = () => {
       isVirtual: false,
       label: null
     }));
-    
+
     return [
       ...companyCols,
       { id: 'seivon', header: 'S.F. SEIVON', isVirtual: true, label: 'SEIVON' },
@@ -273,11 +273,11 @@ export const Dashboard = () => {
   const matrixData = useMemo(() => {
     const groups = clientGroups.map(group => {
       const groupClients = processedClients.filter(c => c.client_group_id === group.id);
-      
+
       const clientsData = groupClients.map(client => {
         const colValues: Record<string, number> = {};
         let clientTotal = 0;
-        
+
         matrixColumns.forEach(col => {
           let val = 0;
           if (!col.isVirtual) {
@@ -292,7 +292,7 @@ export const Dashboard = () => {
           colValues[col.id] = val;
           clientTotal += val;
         });
-        
+
         return {
           id: client.id,
           name: client.name,
@@ -300,16 +300,16 @@ export const Dashboard = () => {
           total: clientTotal
         };
       });
-      
+
       const groupValues: Record<string, number> = {};
       let groupTotal = 0;
-      
+
       matrixColumns.forEach(col => {
         const sum = clientsData.reduce((acc, c) => acc + (c.values[col.id] || 0), 0);
         groupValues[col.id] = sum;
         groupTotal += sum;
       });
-      
+
       return {
         id: group.id,
         name: group.group_name,
@@ -319,14 +319,14 @@ export const Dashboard = () => {
         isGroup: true
       };
     });
-    
+
     // Group clients with no parent group
     const ungroupedClients = processedClients.filter(c => !c.client_group_id);
     if (ungroupedClients.length > 0) {
       const clientsData = ungroupedClients.map(client => {
         const colValues: Record<string, number> = {};
         let clientTotal = 0;
-        
+
         matrixColumns.forEach(col => {
           let val = 0;
           if (!col.isVirtual) {
@@ -341,7 +341,7 @@ export const Dashboard = () => {
           colValues[col.id] = val;
           clientTotal += val;
         });
-        
+
         return {
           id: client.id,
           name: client.name,
@@ -349,16 +349,16 @@ export const Dashboard = () => {
           total: clientTotal
         };
       });
-      
+
       const groupValues: Record<string, number> = {};
       let groupTotal = 0;
-      
+
       matrixColumns.forEach(col => {
         const sum = clientsData.reduce((acc, c) => acc + (c.values[col.id] || 0), 0);
         groupValues[col.id] = sum;
         groupTotal += sum;
       });
-      
+
       groups.push({
         id: 'ungrouped',
         name: 'Otros Clientes',
@@ -368,7 +368,7 @@ export const Dashboard = () => {
         isGroup: true
       });
     }
-    
+
     return groups;
   }, [clientGroups, processedClients, matrixColumns, filteredBillingRecords]);
 
@@ -386,18 +386,18 @@ export const Dashboard = () => {
         billed = filteredBillingRecords
           .filter(r => r.internal_company_id === col.id && r.is_invoiced)
           .reduce((sum, r) => sum + Number(r.amount_gross || 0), 0);
-        
+
         cash = filteredBankTxs
-          .filter(tx => tx.internal_company_id === col.id && tx.transaction_category !== 'internal_transfer')
+          .filter(tx => tx.internal_company_id === col.id && tx.transaction_category !== 'internal_transfer' && Number(tx.amount || 0) > 0)
           .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
       } else {
         const recordsInCol = filteredBillingRecords
           .filter(r => !r.is_invoiced && r.virtual_bucket_label?.toUpperCase() === col.label);
         billed = recordsInCol.reduce((sum, r) => sum + Number(r.amount_gross || 0), 0);
-        
+
         const matchedTxIds = recordsInCol.map(r => r.bank_transaction_id).filter(Boolean) as string[];
         cash = filteredBankTxs
-          .filter(tx => matchedTxIds.includes(tx.id))
+          .filter(tx => matchedTxIds.includes(tx.id) && Number(tx.amount || 0) > 0)
           .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
       }
 
@@ -451,14 +451,14 @@ export const Dashboard = () => {
   const handleExportMatrixCSV = () => {
     const headers = ['ENTITY', ...matrixColumns.map(col => col.header), 'TOTAL'];
     const rows: string[][] = [];
-    
+
     matrixData.forEach(group => {
       rows.push([
         group.name,
         ...matrixColumns.map(col => (group.values[col.id] || 0).toString()),
         group.total.toString()
       ]);
-      
+
       group.clients.forEach(client => {
         rows.push([
           `  ${client.name}`,
@@ -467,7 +467,7 @@ export const Dashboard = () => {
         ]);
       });
     });
-    
+
     rows.push([
       'TOTAL FACTURADO (INVOICED)',
       ...matrixColumns.map(col => (matrixTotals.columns[col.id]?.billed || 0).toString()),
@@ -479,16 +479,16 @@ export const Dashboard = () => {
       ...matrixColumns.map(col => (matrixTotals.columns[col.id]?.cash || 0).toString()),
       matrixTotals.grantTotalCash.toString()
     ]);
-    
+
     rows.push([
       'DIFERENCIA (DELTA)',
       ...matrixColumns.map(col => (matrixTotals.columns[col.id]?.delta || 0).toString()),
       matrixTotals.grantTotalDelta.toString()
     ]);
-    
-    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" 
+
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF"
       + [headers.join(','), ...rows.map(e => e.map(val => `"${val.replace(/"/g, '""')}"`).join(','))].join('\n');
-    
+
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
@@ -513,7 +513,7 @@ export const Dashboard = () => {
   const handleSaveClient = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingClient) return;
-    
+
     try {
       await updateRecord(editingClient.id, {
         commercial_name: editForm.commercialName,
@@ -521,7 +521,7 @@ export const Dashboard = () => {
         commission_percentage: Number(editForm.commissionPercentage),
         retainer_balance: Number(editForm.retainerBalance)
       });
-      
+
       // Reload clients
       fetchClients();
       setIsDrawerOpen(false);
@@ -594,13 +594,13 @@ export const Dashboard = () => {
 
       // 4. Insert Client Subsidiaries
       const clientsToInsert: any[] = [];
-      
+
       // Map to keep track of subsidiaries in a group to link billing records later
       const groupClientsMap = new Map<string, any[]>();
 
       for (const group of demoData.client_directory) {
         const groupId = groupMap.get(group.group_name) || null;
-        
+
         // Find which internal company to link to. 
         // We look at the first billing record of the group that specifies an internal company.
         let targetCompanyId = insertedCompanies[0]?.id;
@@ -696,7 +696,7 @@ export const Dashboard = () => {
           }
 
           const offsetDays = (recordIndex % 10) + 1; // spread dates between 1 and 10 days ago
-          
+
           let bankTxId: string | null = null;
           let isReconciled = false;
 
@@ -978,7 +978,7 @@ export const Dashboard = () => {
         </div>
 
         {/* Card 4: Unreconciled Anomalies */}
-        <div 
+        <div
           className={`${styles.metricCard} ${styles.cardDanger} ${styles.clickableCard}`}
           onClick={() => navigate('/reconciliation')}
         >
@@ -1017,7 +1017,7 @@ export const Dashboard = () => {
                 <span className={`${styles.legendDot} ${styles.dotSuccess}`}></span>
                 <span>Débitos (Salidas)</span>
               </div>
-              <select 
+              <select
                 className={styles.chartSelect}
                 value={timeframe}
                 onChange={(e) => setTimeframe(e.target.value as any)}
@@ -1041,13 +1041,13 @@ export const Dashboard = () => {
                   {chartDays.map((d, index) => (
                     <div key={index} className={styles.barGroup}>
                       <div className={styles.barWrapper}>
-                        <div 
-                          className={`${styles.barInflow} ${d.active ? styles.barActive : ''}`} 
+                        <div
+                          className={`${styles.barInflow} ${d.active ? styles.barActive : ''}`}
                           style={{ height: `${d.inflowPct}%` }}
                           title={`Entradas: ${formatCurrency(d.inflow)}`}
                         ></div>
-                        <div 
-                          className={`${styles.barOutflow} ${d.active ? styles.barActive : ''}`} 
+                        <div
+                          className={`${styles.barOutflow} ${d.active ? styles.barActive : ''}`}
                           style={{ height: `${d.outflowPct}%` }}
                           title={`Salidas: ${formatCurrency(d.outflow)}`}
                         ></div>
@@ -1079,7 +1079,7 @@ export const Dashboard = () => {
               processedClients.slice(0, 4).map((client) => {
                 const limit = 1000000;
                 const pct = Math.min(Math.round(((client.retainer_balance || 0) / limit) * 100), 100);
-                
+
                 return (
                   <div key={client.id} className={styles.healthItem} onClick={() => handleOpenDrawer(client)}>
                     <div className={styles.healthMeta}>
@@ -1087,7 +1087,7 @@ export const Dashboard = () => {
                       <span className={styles.healthPct}>{formatCurrency(client.retainer_balance || 0)}</span>
                     </div>
                     <div className={styles.progressTrack}>
-                      <div 
+                      <div
                         className={`${styles.progressBar} ${pct < 20 ? styles.danger : pct < 60 ? styles.neutral : styles.success}`}
                         style={{ width: `${pct}%` }}
                       ></div>
@@ -1122,7 +1122,7 @@ export const Dashboard = () => {
               </button>
             </div>
           </div>
-          
+
           <div className={styles.matrixScroll}>
             <table className={styles.matrixTable}>
               <thead>
@@ -1137,7 +1137,7 @@ export const Dashboard = () => {
               <tbody>
                 {matrixData.map(group => {
                   const isCollapsed = collapsedGroups[group.id];
-                  
+
                   return (
                     <Fragment key={group.id}>
                       {/* Parent Group Row */}
@@ -1178,7 +1178,7 @@ export const Dashboard = () => {
                   );
                 })}
               </tbody>
-              
+
               <tfoot>
                 {/* Differential Delta validation Row */}
                 <tr className={styles.footerRow}>
@@ -1230,47 +1230,47 @@ export const Dashboard = () => {
                 <X size={20} />
               </button>
             </div>
-            
+
             <div className={styles.drawerBody}>
               {editingClient ? (
                 <form onSubmit={handleSaveClient} className={styles.editForm}>
                   <div className={styles.formGroup}>
                     <label>Nombre Comercial</label>
-                    <input 
-                      type="text" 
-                      value={editForm.commercialName} 
+                    <input
+                      type="text"
+                      value={editForm.commercialName}
                       onChange={e => setEditForm({ ...editForm, commercialName: e.target.value })}
                       placeholder="e.g. Blue Logistics"
                     />
                   </div>
                   <div className={styles.formGroup}>
                     <label>Razón Social (Legal Name)</label>
-                    <input 
-                      type="text" 
-                      value={editForm.legalName} 
+                    <input
+                      type="text"
+                      value={editForm.legalName}
                       onChange={e => setEditForm({ ...editForm, legalName: e.target.value })}
                       placeholder="e.g. Blue Ocean Logistics S.A. de C.V."
                     />
                   </div>
                   <div className={styles.formGroup}>
                     <label>Porcentaje de Comisión (%)</label>
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
                       step="0.01"
-                      value={editForm.commissionPercentage} 
+                      value={editForm.commissionPercentage}
                       onChange={e => setEditForm({ ...editForm, commissionPercentage: Number(e.target.value) })}
                     />
                   </div>
                   <div className={styles.formGroup}>
                     <label>Saldo de Garantía / Provisión ($)</label>
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
                       step="0.01"
-                      value={editForm.retainerBalance} 
+                      value={editForm.retainerBalance}
                       onChange={e => setEditForm({ ...editForm, retainerBalance: Number(e.target.value) })}
                     />
                   </div>
-                  
+
                   <div className={styles.formActions}>
                     <button type="button" className={styles.cancelBtn} onClick={() => setEditingClient(null)}>
                       Volver a la lista
