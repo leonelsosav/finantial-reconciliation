@@ -64,6 +64,7 @@ export const BankManagement = () => {
 
   // Parsed grid state
   const [parsedBatch, setParsedBatch] = useState<ParsedTransaction[]>([]);
+  const [mockType, setMockType] = useState<'main' | 'missing'>('main');
 
   // Historical ledger state
   const [menuOpenRowId, setMenuOpenRowId] = useState<string | null>(null);
@@ -186,7 +187,7 @@ export const BankManagement = () => {
         // - Deposit: +45,200.00 (matches Vault's fifth invoice)
         // - Fee: -1,500.00 (matches Vault's sixth invoice)
         // NOTE: Vault's second invoice (+95,000.00) remains unmatched.
-        const mockBatch: ParsedTransaction[] = [
+        const mockBatch: ParsedTransaction[] = mockType === 'main' ? [
           {
             id: '1',
             date: formattedDate,
@@ -241,6 +242,55 @@ export const BankManagement = () => {
             description: 'PAGO DE NOMINA SPEI',
             reference: `SPEI-${Math.floor(10000 + Math.random() * 90000)}`,
             amount: -42940.00,
+            lowConfidence: false
+          }
+        ] : [
+          {
+            id: '10',
+            date: formattedDate,
+            description: 'TRANSFERENCIA INTERBANCARIA SPEI RECIBIDA',
+            reference: `SPEI-${Math.floor(10000 + Math.random() * 90000)}`,
+            amount: 95000.00,
+            lowConfidence: false
+          },
+          {
+            id: '11',
+            date: formattedDate,
+            description: 'PAGO DE NOMINA SPEI',
+            reference: `SPEI-${Math.floor(10000 + Math.random() * 90000)}`,
+            amount: -90250.00,
+            lowConfidence: false
+          },
+          {
+            id: '12',
+            date: formattedDate,
+            description: 'TRANSFERENCIA INTERBANCARIA SPEI RECIBIDA',
+            reference: `SPEI-${Math.floor(10000 + Math.random() * 90000)}`,
+            amount: 5000.00,
+            lowConfidence: false
+          },
+          {
+            id: '13',
+            date: formattedDate,
+            description: 'PAGO DE NOMINA SPEI',
+            reference: `SPEI-${Math.floor(10000 + Math.random() * 90000)}`,
+            amount: -4750.00,
+            lowConfidence: false
+          },
+          {
+            id: '14',
+            date: formattedDate,
+            description: 'TRANSFERENCIA INTERBANCARIA SPEI RECIBIDA',
+            reference: `SPEI-${Math.floor(10000 + Math.random() * 90000)}`,
+            amount: 3000.00,
+            lowConfidence: false
+          },
+          {
+            id: '15',
+            date: formattedDate,
+            description: 'PAGO DE NOMINA SPEI',
+            reference: `SPEI-${Math.floor(10000 + Math.random() * 90000)}`,
+            amount: -2850.00,
             lowConfidence: false
           }
         ];
@@ -470,10 +520,25 @@ export const BankManagement = () => {
 
           <button 
             className={styles.uploadBtn}
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => {
+              setMockType('main');
+              setTimeout(() => fileInputRef.current?.click(), 50);
+            }}
           >
             <Upload size={14} />
-            <span>CARGAR CAPTURA</span>
+            <span>CARGAR CAPTURA PRINCIPAL</span>
+          </button>
+
+          <button 
+            className={styles.uploadBtn}
+            style={{ color: '#6366f1', borderColor: '#c7d2fe' }}
+            onClick={() => {
+              setMockType('missing');
+              setTimeout(() => fileInputRef.current?.click(), 50);
+            }}
+          >
+            <Sparkles size={14} />
+            <span>CARGAR TRANS. FALTANTES</span>
           </button>
           
           <input 
