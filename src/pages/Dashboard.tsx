@@ -586,83 +586,88 @@ export const Dashboard = () => {
         await supabase.from('profiles').update({ internal_company_id: null }).eq('id', user.id);
       }
 
-      // 1. Clean up existing records in cascading order to respect foreign key constraints
-      await supabase.from('billing_records').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('bank_transactions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('clients').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('client_groups').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('internal_companies').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      // 1. Fetch current clients and internal companies
+      const { data: dbClients, error: getClientsErr } = await supabase.from('clients').select('*');
+      if (getClientsErr) throw getClientsErr;
 
-      // 2. Insert Internal Companies from data.json
-      const { data: insertedCompanies, error: compErr } = await supabase
-        .from('internal_companies')
-        .insert(demoData.internal_companies)
-        .select();
-      if (compErr) throw compErr;
+      const { data: dbCompanies, error: getCompaniesErr } = await supabase.from('internal_companies').select('*');
+      if (getCompaniesErr) throw getCompaniesErr;
 
-      const companyMap = new Map<string, string>();
-      insertedCompanies?.forEach(c => {
-        companyMap.set(c.name, c.id);
-      });
+      let activeClients = dbClients || [];
+      let activeCompanies = dbCompanies || [];
 
-      // 3. Insert Client Groups
-      const groupNames = demoData.client_directory.map(g => ({ group_name: g.group_name }));
-      const { data: insertedGroups, error: grpError } = await supabase
-        .from('client_groups')
-        .insert(groupNames)
-        .select();
-      if (grpError) throw grpError;
+      // Fallback: If no clients or companies exist, we load the default ones from data.json
+      if (activeClients.length === 0 || activeCompanies.length === 0) {
+        // Clean up everything to be safe
+        await supabase.from('billing_records').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+        await supabase.from('bank_transactions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+        await supabase.from('clients').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+        await supabase.from('client_groups').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+        await supabase.from('internal_companies').delete().neq('id', '00000000-0000-0000-0000-000000000000');
 
-      const groupMap = new Map<string, string>();
-      insertedGroups?.forEach(g => {
-        groupMap.set(g.group_name, g.id);
-      });
+        // Insert default companies
+        const { data: insertedCompanies, error: compErr } = await supabase
+          .from('internal_companies')
+          .insert(demoData.internal_companies)
+          .select();
+        if (compErr) throw compErr;
+        activeCompanies = insertedCompanies || [];
 
-      // 4. Insert Client Subsidiaries
-      const clientsToInsert: any[] = [];
+        const companyMap = new Map<string, string>();
+        activeCompanies.forEach(c => companyMap.set(c.name, c.id));
 
-      // Map to keep track of subsidiaries in a group to link billing records later
-      const groupClientsMap = new Map<string, any[]>();
+        // Insert groups
+        const groupNames = demoData.client_directory.map(g => ({ group_name: g.group_name }));
+        const { data: insertedGroups, error: grpError } = await supabase
+          .from('client_groups')
+          .insert(groupNames)
+          .select();
+        if (grpError) throw grpError;
 
-      for (const group of demoData.client_directory) {
-        const groupId = groupMap.get(group.group_name) || null;
+        const groupMap = new Map<string, string>();
+        insertedGroups?.forEach(g => groupMap.set(g.group_name, g.id));
 
-        // Find which internal company to link to. 
-        // We look at the first billing record of the group that specifies an internal company.
-        let targetCompanyId = insertedCompanies[0]?.id;
-        for (const br of group.billing_records) {
-          if ('internal_company' in br && br.internal_company) {
-            const compId = companyMap.get(br.internal_company);
-            if (compId) {
-              targetCompanyId = compId;
-              break;
+        // Insert default clients
+        const clientsToInsert: any[] = [];
+        for (const group of demoData.client_directory) {
+          const groupId = groupMap.get(group.group_name) || null;
+          let targetCompanyId = activeCompanies[0]?.id;
+          for (const br of group.billing_records) {
+            if ('internal_company' in br && br.internal_company) {
+              const compId = companyMap.get(br.internal_company);
+              if (compId) {
+                targetCompanyId = compId;
+                break;
+              }
             }
+          }
+
+          for (const sub of group.subsidiaries) {
+            clientsToInsert.push({
+              id: crypto.randomUUID(),
+              name: sub.legal_name || sub.commercial_name,
+              commercial_name: sub.commercial_name,
+              legal_name: sub.legal_name,
+              tax_id: sub.tax_id,
+              commission_percentage: sub.commission_percentage,
+              retainer_balance: sub.retainer_balance,
+              client_group_id: groupId,
+              internal_company_id: targetCompanyId
+            });
           }
         }
 
-        const groupSubs = [];
-        for (const sub of group.subsidiaries) {
-          const clientData = {
-            id: crypto.randomUUID(),
-            name: sub.legal_name || sub.commercial_name,
-            commercial_name: sub.commercial_name,
-            legal_name: sub.legal_name,
-            tax_id: sub.tax_id,
-            commission_percentage: sub.commission_percentage,
-            retainer_balance: sub.retainer_balance,
-            client_group_id: groupId,
-            internal_company_id: targetCompanyId
-          };
-          clientsToInsert.push(clientData);
-          groupSubs.push(clientData);
-        }
-        groupClientsMap.set(group.group_name, groupSubs);
+        const { data: insertedClients, error: clientErr } = await supabase
+          .from('clients')
+          .insert(clientsToInsert)
+          .select();
+        if (clientErr) throw clientErr;
+        activeClients = insertedClients || [];
+      } else {
+        // Just delete existing billing records and bank transactions (preserve clients and companies!)
+        await supabase.from('billing_records').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+        await supabase.from('bank_transactions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       }
-
-      const { error: clientErr } = await supabase
-        .from('clients')
-        .insert(clientsToInsert);
-      if (clientErr) throw clientErr;
 
       const formatOffsetDate = (offsetDays: number) => {
         const d = new Date();
@@ -698,205 +703,113 @@ export const Dashboard = () => {
         return txId;
       };
 
-      // 5. Populate Billing Records and Bank Transactions
-      let recordIndex = 0;
-      for (const group of demoData.client_directory) {
-        const subs = groupClientsMap.get(group.group_name) || [];
-        if (subs.length === 0) continue;
+      // Generate random high-fidelity records for ALL current activeClients
+      let globalIndex = 0;
+      for (const client of activeClients) {
+        // Choose internal company linked to the client (or fallback)
+        const companyId = client.internal_company_id || activeCompanies[0]?.id || '';
+        if (!companyId) continue;
 
-        // Default to the first client in the group for linking billing records
-        const primaryClient = subs[0];
-
-        for (const br of group.billing_records) {
-          recordIndex++;
-          const grossAmount = br.amount_gross;
-          const commPercent = primaryClient.commission_percentage;
+        // Generate 4 to 8 invoices per client spread across the last 30 days
+        const numInvoices = Math.floor(Math.random() * 5) + 4; // 4 to 8
+        for (let i = 0; i < numInvoices; i++) {
+          globalIndex++;
+          const grossAmount = Math.floor(Math.random() * 180000) + 20000; // $20,000 to $200,000
+          const commPercent = Number(client.commission_percentage || 0);
           const commission = grossAmount * (commPercent / 100);
           const netPayroll = grossAmount - commission;
-
-          // Determine internal company for this billing record
-          let billingCompanyId = primaryClient.internal_company_id;
-          if ('internal_company' in br && br.internal_company) {
-            const compId = companyMap.get(br.internal_company);
-            if (compId) billingCompanyId = compId;
-          }
-
-          const offsetDays = (recordIndex % 10) + 1; // spread dates between 1 and 10 days ago
+          const offsetDays = Math.floor(Math.random() * 28) + 1; // 1 to 28 days ago
 
           let bankTxId: string | null = null;
           let isReconciled = false;
 
-          // Build scenarios based on group
-          if (group.group_name === 'Alberto Compean') {
-            // Perfect Reconciled Flow
+          // scenario selection based on globalIndex
+          const scenarioRand = globalIndex % 10;
+          if (scenarioRand < 6) {
+            // Scenario A: Perfect Reconciled Match (60%)
             isReconciled = true;
             bankTxId = createBankTx(
               grossAmount,
               offsetDays,
-              `TRSP SPEI NOMINA ${primaryClient.commercial_name?.toUpperCase()}`,
+              `TRSP SPEI NOMINA ${client.commercial_name?.toUpperCase() || client.name?.toUpperCase()}`,
               'client_operation',
-              billingCompanyId,
+              companyId,
               true
             );
-          } else if (group.group_name === 'Jaguar') {
-            // Mismatched amount
+          } else if (scenarioRand < 8) {
+            // Scenario B: Mismatched bank transaction amount (20%)
+            // Create a bank transaction with a small discrepancy
+            const diffAmount = (Math.random() > 0.5 ? 1 : -1) * (Math.floor(Math.random() * 1500) + 100); // discrepancy of $100 to $1600
             isReconciled = false;
             createBankTx(
-              grossAmount - 100, // 100 less
+              grossAmount + diffAmount,
               offsetDays,
-              `SPEI FDO ${primaryClient.commercial_name?.toUpperCase()}`,
+              `SPEI DEP DIFERIDO ${client.commercial_name?.toUpperCase() || client.name?.toUpperCase()}`,
               'client_operation',
-              billingCompanyId,
+              companyId,
               false
             );
-          } else if (group.group_name === 'Carolina') {
-            // Mix of reconciled, mismatched and missing
-            if (recordIndex % 3 === 0) {
-              // Perfect Match
-              isReconciled = true;
-              bankTxId = createBankTx(
-                grossAmount,
-                offsetDays,
-                `ABONO ${primaryClient.commercial_name?.toUpperCase()}`,
-                'client_operation',
-                billingCompanyId,
-                true
-              );
-            } else if (recordIndex % 3 === 1) {
-              // Mismatched
-              isReconciled = false;
-              createBankTx(
-                grossAmount + 500, // 500 more
-                offsetDays,
-                `ABONO COMPLEMENTO ${primaryClient.commercial_name?.toUpperCase()}`,
-                'client_operation',
-                billingCompanyId,
-                false
-              );
-            } else {
-              // Missing Bank Transaction
-              isReconciled = false;
-            }
-          } else if (group.group_name === 'Leonel') {
-            // Perfect Reconciled
-            isReconciled = true;
-            bankTxId = createBankTx(
-              grossAmount,
-              offsetDays,
-              `TRANSF ${primaryClient.commercial_name?.toUpperCase()}`,
-              'client_operation',
-              billingCompanyId,
-              true
-            );
-          } else if (group.group_name === 'Daniel Castillo') {
-            // Missing bank transaction
-            isReconciled = false;
-          } else if (group.group_name === 'Elias') {
-            // 2 Reconciled, 2 Unreconciled
-            if (recordIndex % 2 === 0) {
-              isReconciled = true;
-              bankTxId = createBankTx(
-                grossAmount,
-                offsetDays,
-                `DEPOSITO ${primaryClient.commercial_name?.toUpperCase()}`,
-                'client_operation',
-                billingCompanyId,
-                true
-              );
-            } else {
-              isReconciled = false;
-            }
-          } else if (group.group_name === 'Arc patatuchi') {
-            // 1 Reconciled, 1 Mismatched
-            if (recordIndex % 2 === 0) {
-              isReconciled = true;
-              bankTxId = createBankTx(
-                grossAmount,
-                offsetDays,
-                `TRSP ${primaryClient.commercial_name?.toUpperCase()}`,
-                'client_operation',
-                billingCompanyId,
-                true
-              );
-            } else {
-              isReconciled = false;
-              createBankTx(
-                grossAmount - 50,
-                offsetDays,
-                `TRSP PARCIAL ${primaryClient.commercial_name?.toUpperCase()}`,
-                'client_operation',
-                billingCompanyId,
-                false
-              );
-            }
-          } else if (group.group_name === 'Tomas Bernal') {
-            // Perfect Reconciled
-            isReconciled = true;
-            bankTxId = createBankTx(
-              grossAmount,
-              offsetDays,
-              `SPEI FDO ${primaryClient.commercial_name?.toUpperCase()}`,
-              'client_operation',
-              billingCompanyId,
-              true
-            );
-          } else if (group.group_name === 'Favorito') {
-            // Perfect Reconciled (large amount)
-            isReconciled = true;
-            bankTxId = createBankTx(
-              grossAmount,
-              offsetDays,
-              `TRSP COMPLETO ${primaryClient.commercial_name?.toUpperCase()}`,
-              'client_operation',
-              billingCompanyId,
-              true
-            );
           } else {
-            // Default fallback
+            // Scenario C: Missing Bank Transaction / Invoice Outstanding (20%)
             isReconciled = false;
           }
 
           demoRecords.push({
             id: crypto.randomUUID(),
-            client_id: primaryClient.id,
-            internal_company_id: billingCompanyId,
+            client_id: client.id,
+            internal_company_id: companyId,
             invoice_uuid: crypto.randomUUID(),
-            is_invoiced: br.is_invoiced,
-            virtual_bucket_label: 'virtual_bucket_label' in br ? br.virtual_bucket_label : null,
+            is_invoiced: true,
+            virtual_bucket_label: 'virtual_bucket_label',
             amount_gross: grossAmount,
             amount_commission: commission,
             amount_net_payroll: netPayroll,
             entry_type: 'payroll_funding',
-            description: `Fondeo de Nómina - ${primaryClient.commercial_name}`,
+            description: `Fondeo de Nómina - ${client.commercial_name || client.name}`,
             operation_date: formatOffsetDate(offsetDays),
             is_reconciled: isReconciled,
             bank_transaction_id: bankTxId
           });
         }
+
+        // Scenario D: Generate 1 unmatched bank transaction (Anomaly) for this client
+        if (Math.random() > 0.3) {
+          const anomalyAmount = Math.floor(Math.random() * 95000) + 5000;
+          const offsetDays = Math.floor(Math.random() * 28) + 1;
+          createBankTx(
+            anomalyAmount,
+            offsetDays,
+            `ABONO NO IDENTIFICADO ${client.commercial_name?.toUpperCase() || client.name?.toUpperCase()}`,
+            'client_operation',
+            companyId,
+            false
+          );
+        }
       }
 
-      // Add a few corporate opex & general bank transactions (outflows/inflows)
-      const mainCompId = insertedCompanies[0]?.id || '';
-      if (mainCompId) {
-        createBankTx(-12500.00, 4, 'COMISION MENSUAL BANCA ELECTRONICA', 'corporate_opex', mainCompId, false);
-        createBankTx(-35000.00, 5, 'PAGO RENTA OFICINAS CORP', 'corporate_opex', mainCompId, false);
-        createBankTx(-450000.00, 2, 'DISPERSION MASIVA NOMINA BATCH', 'client_operation', mainCompId, true);
-        createBankTx(8500.00, 8, 'RENDIMIENTOS INVERSION MOCK', 'corporate_opex', mainCompId, false);
+      // Add a generous set of Corporate OPEX outflows and some general bank adjustments
+      for (const company of activeCompanies) {
+        createBankTx(-12500.00, 4, 'COMISION MENSUAL BANCA ELECTRONICA', 'corporate_opex', company.id, false);
+        createBankTx(-35000.00, 10, 'PAGO RENTA OFICINAS CO-WORKING CORP', 'corporate_opex', company.id, false);
+        createBankTx(-8200.00, 15, 'SOPORTE SERVIDORES TI Y HOSTING CLOUD', 'corporate_opex', company.id, false);
+        createBankTx(-15000.00, 20, 'LICENCIAS ANUALES MICROSOFT & SLACK', 'corporate_opex', company.id, false);
+        createBankTx(-4200.00, 25, 'GASTO PAPELERIA Y SUMINISTROS', 'corporate_opex', company.id, false);
+        createBankTx(12400.00, 18, 'RENDIMIENTOS CUENTA DE INVERSION SAT', 'corporate_opex', company.id, false);
       }
 
-      // Insert bank transactions and billing records
+      // 6. Batch insert billing records and bank transactions
       const { error: insBankErr } = await supabase.from('bank_transactions').insert(demoBankTxs);
       if (insBankErr) throw insBankErr;
 
       const { error: insRecErr } = await supabase.from('billing_records').insert(demoRecords);
       if (insRecErr) throw insRecErr;
 
-      // 6. Recouple current user's profile to the first internal company
-      if (user && insertedCompanies.length > 0) {
-        await supabase.from('profiles').update({ internal_company_id: insertedCompanies[0].id }).eq('id', user.id);
+      // 7. Recouple current user's profile to the first internal company
+      if (user && activeCompanies.length > 0) {
+        await supabase.from('profiles').update({ internal_company_id: activeCompanies[0].id }).eq('id', user.id);
       }
 
-      alert('Datos de simulación cargados con éxito.');
+      alert(`Se han cargado con éxito ${demoRecords.length} facturas y ${demoBankTxs.length} transacciones bancarias utilizando los clientes y empresas de tu base de datos.`);
       window.location.reload();
     } catch (err: any) {
       console.error('Error loading demo data:', err);
