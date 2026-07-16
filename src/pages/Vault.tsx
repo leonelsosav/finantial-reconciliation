@@ -34,11 +34,20 @@ export const Vault = () => {
   const { data: companies, fetchData: fetchCompanies } = useDatabase<InternalCompany>('internal_companies');
 
   // Ingestion state
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
   const [dragActive, setDragActive] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [activeUploadFile, setActiveUploadFile] = useState<string | null>(null);
+
+  // Set default company when companies load
+  useEffect(() => {
+    if (companies.length > 0 && !selectedCompanyId) {
+      const defaultCompany = companies.find(c => c.id === profile?.internal_company_id) || companies[0];
+      setSelectedCompanyId(defaultCompany.id);
+    }
+  }, [companies, profile, selectedCompanyId]);
 
   // Queue state for active session
   const [sessionQueueCount, setSessionQueueCount] = useState(0);
@@ -88,21 +97,17 @@ export const Vault = () => {
     }> = {};
 
     billingRecords.forEach(r => {
-      // Determine filename from description, fallback
-      const isFile = r.description && (r.description.endsWith('.xml') || r.description.endsWith('.xlsx'));
-      const filename = isFile ? r.description! : 'Carga_Manual.xml';
+      // Group strictly by description (which will contain either the filename or the batch folder name)
+      const filename = r.description || 'Carga_Manual.xml';
 
       if (!groups[filename]) {
-        // Find matching client
-        const matchedClient = clients.find(c => c.id === r.client_id);
-        
         groups[filename] = {
           filename,
           // Extract timestamp or fall back to operation_date
           timestamp: r.created_at ? new Date(r.created_at).toISOString().replace('T', ' ').slice(0, 19) : r.operation_date + ' 12:00:00',
           count: 0,
           clientId: r.client_id,
-          clientName: matchedClient?.commercial_name || matchedClient?.name || r.clients?.name || 'Varios Clientes',
+          clientName: '', // Will be calculated after grouping
           status: 'VERIFIED',
           records: []
         };
@@ -117,7 +122,31 @@ export const Vault = () => {
       }
     });
 
-    return Object.values(groups).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    const result = Object.values(groups);
+    
+    // Post-process to summarize client names dynamically
+    result.forEach(group => {
+      const uniqueClientIds = Array.from(new Set(group.records.map(r => r.client_id)));
+      if (uniqueClientIds.length === 1) {
+        const client = clients.find(c => c.id === uniqueClientIds[0]);
+        group.clientName = client?.commercial_name || client?.name || 'Cliente';
+      } else if (uniqueClientIds.length > 1) {
+        const names = uniqueClientIds.map(id => {
+          const client = clients.find(c => c.id === id);
+          return client?.commercial_name || client?.name;
+        }).filter(Boolean);
+
+        if (names.length <= 2) {
+          group.clientName = names.join(', ');
+        } else {
+          group.clientName = 'Varios Clientes';
+        }
+      } else {
+        group.clientName = 'Sin Cliente';
+      }
+    });
+
+    return result.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   }, [billingRecords, clients]);
 
   // Client-side search and filters
@@ -159,99 +188,241 @@ export const Vault = () => {
     e.stopPropagation();
     setDragActive(false);
 
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const file = e.dataTransfer.files[0];
-      await processUploadedFile(file);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      await processUploadedFiles(e.dataTransfer.files);
     }
   };
 
   const handleFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      await processUploadedFile(file);
+    if (e.target.files && e.target.files.length > 0) {
+      await processUploadedFiles(e.target.files);
     }
   };
 
-  // Processing routine
-  const processUploadedFile = async (file: File) => {
+  const handleFolderInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      await processUploadedFiles(e.target.files);
+    }
+  };
 
+  // Processing routine for multiple files / folder
+  const processUploadedFiles = async (filesList: FileList | File[]) => {
+    if (!selectedCompanyId) {
+      alert('Por favor, seleccione una empresa interna antes de cargar las facturas.');
+      return;
+    }
     if (clients.length === 0 || companies.length === 0) {
       alert('Esperando que se carguen las entidades autorizadas. Intente de nuevo en unos segundos.');
       return;
     }
 
+    const xmlFiles = Array.from(filesList).filter(f => f.name.toLowerCase().endsWith('.xml'));
+    if (xmlFiles.length === 0) {
+      alert('No se encontraron archivos XML válidos para procesar.');
+      return;
+    }
+
+    // Determine shared batch name for grouping
+    const firstWithRelativePath = xmlFiles.find(f => (f as any).webkitRelativePath);
+    let batchName = '';
+    if (firstWithRelativePath) {
+      const relPath = (firstWithRelativePath as any).webkitRelativePath;
+      const parts = relPath.split('/');
+      if (parts.length > 1) {
+        batchName = `Lote: ${parts[0]}`;
+      }
+    }
+
+    if (!batchName) {
+      const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+      batchName = xmlFiles.length > 1 
+        ? `Lote: ${xmlFiles.length} Facturas (${nowStr})` 
+        : xmlFiles[0].name;
+    }
+
     setIsUploading(true);
     setUploadProgress(0);
-    setActiveUploadFile(file.name);
+    setSessionErrorsCount(0);
 
-    // Progress bar animation to simulate CFDI parsing
-    const interval = setInterval(() => {
-      setUploadProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          return 100;
-        }
-        return prev + 20;
+    const totalFiles = xmlFiles.length;
+    let parsedCount = 0;
+    let successCount = 0;
+    let warningCount = 0;
+    const parsedInvoices: any[] = [];
+
+    // Helper to read file text content
+    const readFileText = (file: File): Promise<string> => {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target?.result as string);
+        reader.onerror = () => reject(new Error(`Error de lectura en ${file.name}`));
+        reader.readAsText(file);
       });
-    }, 300);
+    };
 
-    // Wait for upload animation to complete
-    await new Promise(resolve => setTimeout(resolve, 1600));
-
-    try {
-      // Predefined mock invoice amounts to align perfectly with Bank Management workspace
-      const mockInvoiceAmounts = [125000.00, 95000.00, 5000.00, 72400.00, 45200.00, 3000.00];
-      const itemsCount = mockInvoiceAmounts.length;
-      const createdRecords = [];
-
-      // Pick a random client and matching internal company
-      const randomClient = clients[Math.floor(Math.random() * clients.length)];
-      const targetCompanyId = randomClient.internal_company_id || companies[0]?.id;
-
-      // Simulate a duplicate UUID formatting exception to demonstrate queue error check (5% chance)
-      const shouldSimulateError = Math.random() < 0.08;
-
-      if (shouldSimulateError) {
-        setSessionErrorsCount(prev => prev + 1);
-        throw new Error('Duplicated CFDI UUID mismatch detected in sat registry validation.');
+    // Helper to extract elements ignoring namespace prefixes
+    const getElementByLocalName = (doc: Document, localName: string): Element | null => {
+      const tags = doc.getElementsByTagName(`cfdi:${localName}`);
+      if (tags.length > 0) return tags[0];
+      const tagsNoPrefix = doc.getElementsByTagName(localName);
+      if (tagsNoPrefix.length > 0) return tagsNoPrefix[0];
+      const allElements = doc.getElementsByTagName('*');
+      for (let i = 0; i < allElements.length; i++) {
+        const el = allElements[i];
+        if (el.localName === localName || el.tagName.endsWith(':' + localName)) {
+          return el;
+        }
       }
+      return null;
+    };
 
-      for (let i = 0; i < itemsCount; i++) {
-        const gross = mockInvoiceAmounts[i];
-        
-        createdRecords.push({
-          client_id: randomClient.id,
-          internal_company_id: targetCompanyId,
-          invoice_uuid: crypto.randomUUID(),
+    for (let i = 0; i < totalFiles; i++) {
+      const file = xmlFiles[i];
+      setActiveUploadFile(file.name);
+
+      try {
+        const xmlText = await readFileText(file);
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+
+        const parseError = xmlDoc.getElementsByTagName('parsererror');
+        if (parseError.length > 0) {
+          throw new Error('Formato XML no válido o corrupto');
+        }
+
+        const comprobanteEl = getElementByLocalName(xmlDoc, 'Comprobante');
+        if (!comprobanteEl) {
+          throw new Error('No se encontró el nodo Comprobante');
+        }
+
+        const receptorEl = getElementByLocalName(xmlDoc, 'Receptor');
+        const timbreEl = getElementByLocalName(xmlDoc, 'TimbreFiscalDigital');
+
+        const receptorRfc = receptorEl?.getAttribute('Rfc') || '';
+        const receptorNombre = receptorEl?.getAttribute('Nombre') || '';
+        const uuid = timbreEl?.getAttribute('UUID') || '';
+        const total = Number(comprobanteEl.getAttribute('Total') || 0);
+        const fechaAttr = comprobanteEl.getAttribute('Fecha') || '';
+        const operationDate = fechaAttr.split('T')[0] || DateEngine.getLocalYYYYMMDD(new Date());
+
+        if (!uuid) {
+          throw new Error('No se encontró el UUID del timbre fiscal (UUID)');
+        }
+
+        // Match Client by Receptor RFC (case-insensitive)
+        let matchedClient = clients.find(c => c.tax_id?.trim().toUpperCase() === receptorRfc.trim().toUpperCase());
+
+        // Substring / Name fallback if RFC does not match directly
+        if (!matchedClient && receptorNombre) {
+          matchedClient = clients.find(c => 
+            receptorNombre.toLowerCase().includes(c.name.toLowerCase()) ||
+            c.name.toLowerCase().includes(receptorNombre.toLowerCase()) ||
+            (c.legal_name && (receptorNombre.toLowerCase().includes(c.legal_name.toLowerCase()) || c.legal_name.toLowerCase().includes(receptorNombre.toLowerCase()))) ||
+            (c.commercial_name && (receptorNombre.toLowerCase().includes(c.commercial_name.toLowerCase()) || c.commercial_name.toLowerCase().includes(receptorNombre.toLowerCase())))
+          );
+        }
+
+        let clientId = matchedClient?.id;
+        if (!clientId) {
+          // Fallback to first client under the selected company, or first client globally
+          const companyClients = clients.filter(c => c.internal_company_id === selectedCompanyId);
+          if (companyClients.length > 0) {
+            clientId = companyClients[0].id;
+          } else if (clients.length > 0) {
+            clientId = clients[0].id;
+          }
+          warningCount++;
+        }
+
+        const clientObj = clients.find(c => c.id === clientId);
+        const commissionPercent = clientObj?.commission_percentage || 0;
+        const amountCommission = total * (commissionPercent / 100);
+        const amountNetPayroll = total - amountCommission;
+
+        parsedInvoices.push({
+          client_id: clientId,
+          internal_company_id: selectedCompanyId,
+          invoice_uuid: uuid,
           is_invoiced: true,
           virtual_bucket_label: null,
-          // Margins are excluded/zeroed out to preserve confidentiality bounds
-          amount_gross: gross,
-          amount_commission: 0,
-          amount_net_payroll: 0,
+          amount_gross: total,
+          amount_commission: amountCommission,
+          amount_net_payroll: amountNetPayroll,
           entry_type: 'payroll_funding',
-          description: file.name, // Save original file name in description for grouping
-          operation_date: DateEngine.getLocalYYYYMMDD(new Date()),
+          description: batchName, // Save batch label in description for grouping
+          operation_date: operationDate,
           is_reconciled: false,
           imported_by: profile?.id || null
         });
+
+        successCount++;
+      } catch (err: any) {
+        console.error(`Error al procesar archivo ${file.name}:`, err);
+        setSessionErrorsCount(prev => prev + 1);
       }
 
-      // Insert all mock invoices to Supabase database
-      const { error: insertError } = await supabase.from('billing_records').insert(createdRecords);
-      if (insertError) throw insertError;
+      parsedCount++;
+      setUploadProgress(Math.round((parsedCount / totalFiles) * 100));
+    }
 
-      // Update active queue counter
-      setSessionQueueCount(prev => prev + itemsCount);
-      alert(`Ingestión Completada. Se extrajeron y cargaron ${itemsCount} facturas válidas.`);
-      
+    if (parsedInvoices.length === 0) {
+      alert('No se pudo extraer ninguna factura válida de los archivos cargados.');
+      setIsUploading(false);
+      setActiveUploadFile(null);
+      return;
+    }
+
+    try {
+      setActiveUploadFile('Verificando duplicados en la base de datos...');
+      const uuids = parsedInvoices.map(x => x.invoice_uuid);
+
+      // Query database for existing UUIDs in chunks of 50 to avoid query size limits
+      const existingUuids = new Set<string>();
+      const chunkSize = 50;
+      for (let i = 0; i < uuids.length; i += chunkSize) {
+        const chunk = uuids.slice(i, i + chunkSize);
+        const { data, error } = await supabase
+          .from('billing_records')
+          .select('invoice_uuid')
+          .in('invoice_uuid', chunk);
+
+        if (error) throw error;
+        if (data) {
+          data.forEach(row => {
+            if (row.invoice_uuid) existingUuids.add(row.invoice_uuid);
+          });
+        }
+      }
+
+      // Filter out duplicate invoices
+      const uniqueParsedInvoices = parsedInvoices.filter(x => !existingUuids.has(x.invoice_uuid));
+      const duplicatesCount = parsedInvoices.length - uniqueParsedInvoices.length;
+
+      if (uniqueParsedInvoices.length > 0) {
+        setActiveUploadFile(`Guardando ${uniqueParsedInvoices.length} facturas nuevas...`);
+        const { error: insertError } = await supabase.from('billing_records').insert(uniqueParsedInvoices);
+        if (insertError) throw insertError;
+      }
+
+      setSessionQueueCount(prev => prev + uniqueParsedInvoices.length);
+
+      let message = `Ingestión finalizada.\n`;
+      message += `- Cargadas con éxito: ${uniqueParsedInvoices.length} facturas\n`;
+      if (duplicatesCount > 0) {
+        message += `- Omitidas por duplicadas: ${duplicatesCount}\n`;
+      }
+      if (warningCount > 0) {
+        message += `- Advertencias (clientes no identificados asignados por defecto): ${warningCount}\n`;
+      }
+      alert(message);
+
       // Reload audit list
       fetchBilling({
         sort: { column: 'created_at', direction: 'desc' }
       });
     } catch (err: any) {
-      console.error('Error parsing file:', err);
-      alert(`Error al procesar archivo: ${err.message}`);
+      console.error('Error al guardar facturas:', err);
+      alert(`Error al guardar facturas: ${err.message}`);
     } finally {
       setIsUploading(false);
       setActiveUploadFile(null);
@@ -382,6 +553,24 @@ export const Vault = () => {
             <span className={styles.tagBadge}>Cifrado AES-256</span>
           </div>
 
+          <div className={styles.companySelectWrapper}>
+            <label htmlFor="companySelect" className={styles.selectLabel}>Empresa Interna Destino</label>
+            <select
+              id="companySelect"
+              className={styles.companySelect}
+              value={selectedCompanyId}
+              onChange={(e) => setSelectedCompanyId(e.target.value)}
+              disabled={isUploading}
+            >
+              <option value="" disabled>Seleccione una empresa...</option>
+              {companies.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.name} {c.tax_id ? `(${c.tax_id})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div 
             className={`${styles.dropZone} ${dragActive ? styles.dragActive : ''} ${isUploading ? styles.uploading : ''}`}
             onDragEnter={handleDrag}
@@ -403,19 +592,50 @@ export const Vault = () => {
                 <div className={styles.scanLine}></div>
               </div>
             ) : (
-              <label className={styles.dropZoneLabel}>
+              <div>
                 <input 
                   type="file" 
+                  id="file-upload-input"
                   className={styles.fileInput} 
                   onChange={handleFileInput}
+                  multiple
+                  accept=".xml"
+                />
+                <input 
+                  type="file" 
+                  id="folder-upload-input"
+                  className={styles.fileInput} 
+                  ref={(input) => {
+                    if (input) {
+                      input.setAttribute('webkitdirectory', '');
+                      input.setAttribute('directory', '');
+                    }
+                  }}
+                  onChange={handleFolderInput}
                 />
                 <div className={styles.uploadIconCircle}>
                   <CloudUpload size={32} />
                 </div>
-                <p className={styles.dropTextPrimary}>Arrastre archivos contables</p>
-                <p className={styles.dropTextSecondary}>CONTPAQi® XML individuales / Lotes ZIP o Reportes XLSX</p>
-                <button type="button" className={styles.selectBtn}>Seleccionar Archivo</button>
-              </label>
+                <p className={styles.dropTextPrimary}>Arrastre archivos XML o carpetas aquí</p>
+                <p className={styles.dropTextSecondary}>Carga de facturas XML individuales o carpetas de facturación</p>
+                
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '12px' }}>
+                  <button 
+                    type="button" 
+                    className={styles.selectBtn}
+                    onClick={() => document.getElementById('file-upload-input')?.click()}
+                  >
+                    Seleccionar Archivos
+                  </button>
+                  <button 
+                    type="button" 
+                    className={styles.folderBtn}
+                    onClick={() => document.getElementById('folder-upload-input')?.click()}
+                  >
+                    Seleccionar Carpeta
+                  </button>
+                </div>
+              </div>
             )}
           </div>
 
@@ -635,22 +855,30 @@ export const Vault = () => {
                   <thead>
                     <tr>
                       <th>UUID CFDI</th>
+                      <th>Cliente</th>
                       <th>Fecha</th>
                       <th className={styles.rightAlign}>Monto (Gross)</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {selectedGroup.records.map(record => (
-                      <tr key={record.id}>
-                        <td className={styles.uuidCell} title={record.invoice_uuid || 'Sin UUID'}>
-                          {record.invoice_uuid ? `${record.invoice_uuid.slice(0, 8)}...${record.invoice_uuid.slice(-6)}` : 'S/N'}
-                        </td>
-                        <td className={styles.dateCell}>{record.operation_date}</td>
-                        <td className={`${styles.rightAlign} ${styles.monoCell}`}>
-                          {formatCurrency(record.amount_gross)}
-                        </td>
-                      </tr>
-                    ))}
+                    {selectedGroup.records.map(record => {
+                      const recordClient = clients.find(c => c.id === record.client_id);
+                      const recordClientName = recordClient?.commercial_name || recordClient?.name || 'Cliente';
+                      return (
+                        <tr key={record.id}>
+                          <td className={styles.uuidCell} title={record.invoice_uuid || 'Sin UUID'}>
+                            {record.invoice_uuid ? `${record.invoice_uuid.slice(0, 8)}...${record.invoice_uuid.slice(-6)}` : 'S/N'}
+                          </td>
+                          <td className={styles.clientCell} title={recordClientName}>
+                            {recordClientName}
+                          </td>
+                          <td className={styles.dateCell}>{record.operation_date}</td>
+                          <td className={`${styles.rightAlign} ${styles.monoCell}`}>
+                            {formatCurrency(record.amount_gross)}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
