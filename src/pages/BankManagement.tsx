@@ -11,14 +11,15 @@ import { ReconciliationService } from '../services/reconciliation.service';
 import { 
   Lock, 
   AlertTriangle, 
-  MoreVertical, 
   Loader2, 
   FileImage,
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
   Sparkles,
-  Trash2
+  ZoomIn,
+  ZoomOut,
+  RotateCcw
 } from 'lucide-react';
 import styles from './BankManagement.module.scss';
 
@@ -42,7 +43,7 @@ export const BankManagement = () => {
   // Supabase hooks
   const { data: companies, fetchData: fetchCompanies } = useDatabase<InternalCompany>('internal_companies');
   const { data: clients = [], fetchData: fetchClients } = useDatabase<Client>('clients');
-  const { data: transactions, loading, fetchData: fetchTransactions, updateRecord, deleteRecord } = useDatabase<BankTransaction>('bank_transactions');
+  const { data: transactions, loading, fetchData: fetchTransactions } = useDatabase<BankTransaction>('bank_transactions');
 
   // Account / Company filter context
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
@@ -87,9 +88,21 @@ export const BankManagement = () => {
 
   // Parsed grid state
   const [parsedBatch, setParsedBatch] = useState<ParsedTransaction[]>([]);
+  const [zoomLevel, setZoomLevel] = useState<number>(100);
+
+  const handleZoomIn = () => {
+    setZoomLevel(prev => Math.min(prev + 25, 300));
+  };
+
+  const handleZoomOut = () => {
+    setZoomLevel(prev => Math.max(prev - 25, 50));
+  };
+
+  const handleZoomReset = () => {
+    setZoomLevel(100);
+  };
 
   // Historical ledger state
-  const [menuOpenRowId, setMenuOpenRowId] = useState<string | null>(null);
   const [ledgerPage, setLedgerPage] = useState<number>(1);
   const itemsPerPage = 8;
 
@@ -126,6 +139,7 @@ export const BankManagement = () => {
     setActiveUploadFile(null);
     setSystemPayloadId('');
     setParsedBatch([]);
+    setZoomLevel(100);
   }, [selectedCompanyId]);
 
   // Draggable Pane Handlers
@@ -186,6 +200,7 @@ export const BankManagement = () => {
     setIsProcessing(true);
     setProcessingProgress(0);
     setParsedBatch([]);
+    setZoomLevel(100);
 
     try {
       const transactions = await OcrService.processScreenshot(file, (pct) => {
@@ -308,45 +323,6 @@ export const BankManagement = () => {
     }
   };
 
-  const handleUpdateCategory = async (id: string, category: 'client_operation' | 'internal_transfer' | 'corporate_opex') => {
-    try {
-      await updateRecord(id, { transaction_category: category });
-      setMenuOpenRowId(null);
-      loadTransactions();
-    } catch (err: any) {
-      showAlert('error', 'Error de Actualización', `Error: ${err.message}`);
-    }
-  };
-
-  const handleToggleReconciliation = async (id: string, state: boolean) => {
-    try {
-      await updateRecord(id, { is_reconciled: state });
-      setMenuOpenRowId(null);
-      loadTransactions();
-    } catch (err: any) {
-      showAlert('error', 'Error de Conciliación', `Error: ${err.message}`);
-    }
-  };
-
-  const handleDeleteLedgerRow = (id: string) => {
-    showAlert(
-      'confirm',
-      'Eliminar Transacción',
-      '¿Está seguro de eliminar esta transacción de forma permanente?',
-      () => runDeleteLedgerRow(id)
-    );
-  };
-
-  const runDeleteLedgerRow = async (id: string) => {
-    try {
-      await deleteRecord(id);
-      setMenuOpenRowId(null);
-      loadTransactions();
-    } catch (err: any) {
-      showAlert('error', 'Error al Eliminar', `Error: ${err.message}`);
-    }
-  };
-
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('es-MX', {
       style: 'currency',
@@ -354,12 +330,7 @@ export const BankManagement = () => {
     }).format(Math.abs(amount));
   };
 
-  // Close menus on click outside
-  useEffect(() => {
-    const handleOutsideClick = () => setMenuOpenRowId(null);
-    document.addEventListener('click', handleOutsideClick);
-    return () => document.removeEventListener('click', handleOutsideClick);
-  }, []);
+
 
   // Pagination helper
   const paginatedTxs = useMemo(() => {
@@ -458,10 +429,43 @@ export const BankManagement = () => {
                 </div>
               </div>
             ) : captureUrl ? (
-              <div 
-                className={styles.captureImage}
-                style={{ backgroundImage: `url(${captureUrl})` }}
-              />
+              <div className={styles.imageContainer}>
+                <img 
+                  src={captureUrl} 
+                  alt="Captura bancaria" 
+                  className={styles.captureImageTag}
+                  style={{ width: `${zoomLevel}%` }}
+                />
+                <div className={styles.zoomControls}>
+                  <button 
+                    type="button"
+                    onClick={handleZoomOut} 
+                    disabled={zoomLevel <= 50}
+                    className={styles.zoomBtn}
+                    title="Alejar"
+                  >
+                    <ZoomOut size={14} />
+                  </button>
+                  <span className={styles.zoomPercentage}>{zoomLevel}%</span>
+                  <button 
+                    type="button"
+                    onClick={handleZoomIn} 
+                    disabled={zoomLevel >= 300}
+                    className={styles.zoomBtn}
+                    title="Acercar"
+                  >
+                    <ZoomIn size={14} />
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={handleZoomReset} 
+                    className={styles.zoomBtn}
+                    title="Restablecer"
+                  >
+                    <RotateCcw size={14} />
+                  </button>
+                </div>
+              </div>
             ) : (
               <div 
                 className={`${styles.dropZone} ${isDragActive ? styles.dragActive : ''}`}
@@ -616,20 +620,19 @@ export const BankManagement = () => {
                 <th style={{ width: '150px' }} className={styles.alignRight}>Monto</th>
                 <th style={{ width: '100px' }} className={styles.alignCenter}>Categoría</th>
                 <th style={{ width: '130px' }} className={styles.alignCenter}>Estado</th>
-                <th style={{ width: '50px' }}></th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={7} className={styles.ledgerLoading}>
+                  <td colSpan={6} className={styles.ledgerLoading}>
                     <Loader2 className={styles.spin} size={20} />
                     <span>Cargando transacciones...</span>
                   </td>
                 </tr>
               ) : paginatedTxs.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className={styles.ledgerEmpty}>
+                  <td colSpan={6} className={styles.ledgerEmpty}>
                     <span>No hay registros financieros en este perfil.</span>
                   </td>
                 </tr>
@@ -653,61 +656,6 @@ export const BankManagement = () => {
                       <span className={`${styles.statusPill} ${tx.is_reconciled ? styles.reconciled : styles.pending}`}>
                         {tx.is_reconciled ? 'CONCILIADO' : 'PENDIENTE'}
                       </span>
-                    </td>
-                    <td className={styles.alignCenter} style={{ position: 'relative' }}>
-                      <button 
-                        className={styles.menuAnchor}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setMenuOpenRowId(menuOpenRowId === tx.id ? null : tx.id);
-                        }}
-                      >
-                        <MoreVertical size={16} />
-                      </button>
-                      
-                      {menuOpenRowId === tx.id && (
-                        <div className={styles.actionMenu} onClick={e => e.stopPropagation()}>
-                          <p className={styles.menuTitle}>Categoría Contable</p>
-                          <button 
-                            onClick={() => handleUpdateCategory(tx.id, 'client_operation')}
-                            className={`${styles.menuItem} ${tx.transaction_category === 'client_operation' ? styles.active : ''}`}
-                          >
-                            Operación de Cliente
-                          </button>
-                          <button 
-                            onClick={() => handleUpdateCategory(tx.id, 'internal_transfer')}
-                            className={`${styles.menuItem} ${tx.transaction_category === 'internal_transfer' ? styles.active : ''}`}
-                          >
-                            Transferencia Interna
-                          </button>
-                          <button 
-                            onClick={() => handleUpdateCategory(tx.id, 'corporate_opex')}
-                            className={`${styles.menuItem} ${tx.transaction_category === 'corporate_opex' ? styles.active : ''}`}
-                          >
-                            Gasto Corporativo
-                          </button>
-
-                          <div className={styles.menuDivider}></div>
-                          
-                          <p className={styles.menuTitle}>Reconciliación</p>
-                          <button 
-                            onClick={() => handleToggleReconciliation(tx.id, !tx.is_reconciled)}
-                            className={styles.menuItem}
-                          >
-                            {tx.is_reconciled ? 'Cambiar a Pendiente' : 'Forzar Conciliación'}
-                          </button>
-
-                          <div className={styles.menuDivider}></div>
-
-                          <button 
-                            onClick={() => handleDeleteLedgerRow(tx.id)}
-                            className={`${styles.menuItem} ${styles.dangerItem}`}
-                          >
-                            <Trash2 size={12} className={styles.dangerIcon} />
-                            Eliminar Transacción
-                          </button>
-                        </div>
-                      )}
                     </td>
                   </tr>
                 ))
