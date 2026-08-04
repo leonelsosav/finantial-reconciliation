@@ -8,7 +8,8 @@ import {
   Building2,
   Plus,
   CloudUpload,
-  Users
+  Users,
+  HelpCircle
 } from 'lucide-react';
 import styles from './MainLayout.module.scss';
 
@@ -85,6 +86,14 @@ export const MainLayout = () => {
               <span>Gestión de Bancos</span>
             </NavLink>
           )}
+
+          <NavLink
+            to="/help"
+            className={({ isActive }) => `${styles.navItem} ${isActive ? styles.active : ''}`}
+          >
+            <HelpCircle size={18} />
+            <span>Soporte y Ayuda</span>
+          </NavLink>
         </nav>
 
         <div className={styles.sidebarFooter}>

@@ -8,6 +8,7 @@ import { BankManagement } from './pages/BankManagement';
 import { Reconciliation } from './pages/Reconciliation';
 import { Vault } from './pages/Vault';
 import { Directory } from './pages/Directory';
+import { Help } from './pages/Help';
 
 export const App = () => {
   return (
@@ -26,6 +27,7 @@ export const App = () => {
             <Route path="/bank" element={<ProtectedRoute allowedRoles={['owner', 'auditor']}><BankManagement /></ProtectedRoute>} />
             <Route path="/reconciliation" element={<ProtectedRoute allowedRoles={['owner', 'auditor']}><Reconciliation /></ProtectedRoute>} />
             <Route path="/vault" element={<ProtectedRoute allowedRoles={['owner', 'ops']}><Vault /></ProtectedRoute>} />
+            <Route path="/help" element={<Help />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

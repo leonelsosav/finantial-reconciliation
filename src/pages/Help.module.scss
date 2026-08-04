@@ -1,0 +1,306 @@
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
+
+  @media (max-width: 768px) {
+    flex-direction: column;
+    gap: 16px;
+  }
+}
+
+.titleGroup {
+  .breadcrumbs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-bottom: 6px;
+    letter-spacing: 0.05em;
+
+    .separator {
+      color: #cbd5e1;
+    }
+
+    .activePage {
+      color: #0f172a;
+    }
+  }
+
+  .pageTitle {
+    font-size: 24px;
+    font-weight: 800;
+    color: #0f172a;
+    letter-spacing: -0.02em;
+    margin: 0;
+  }
+
+  .pageSub {
+    font-size: 13px;
+    color: #64748b;
+    margin: 4px 0 0;
+  }
+}
+
+.layoutGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+
+  @media (max-width: 900px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Support Card Styling */
+.supportCard {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 16px;
+  padding: 28px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  }
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+
+  .avatarCircle {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #4f46e5, #06b6d4);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(79, 70, 229, 0.3);
+  }
+
+  .avatarMeta {
+    h3 {
+      font-size: 18px;
+      font-weight: 700;
+      color: #0f172a;
+      margin: 0;
+    }
+
+    p {
+      font-size: 13px;
+      color: #64748b;
+      margin: 4px 0 0;
+      font-weight: 500;
+    }
+  }
+}
+
+.cardBody {
+  .supportIntro {
+    font-size: 14px;
+    line-height: 1.6;
+    color: #475569;
+    margin: 0 0 24px;
+  }
+}
+
+.contactItems {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.contactRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  background: rgba(248, 250, 252, 0.8);
+  border: 1px solid #f1f5f9;
+  border-radius: 10px;
+
+  @media (max-width: 480px) {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}
+
+.contactLabel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #4f46e5;
+  font-weight: 600;
+  font-size: 13px;
+
+  span {
+    color: #334155;
+  }
+}
+
+.contactActionGroup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  @media (max-width: 480px) {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .contactValue {
+    font-size: 13px;
+    color: #4f46e5;
+    font-weight: 600;
+    text-decoration: none;
+    transition: color 0.2s;
+
+    &:hover {
+      color: #3730a3;
+      text-decoration: underline;
+    }
+  }
+
+  .copyBtn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #94a3b8;
+    padding: 6px;
+    border-radius: 6px;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    &:hover {
+      color: #475569;
+      background-color: #f1f5f9;
+    }
+
+    .copiedIcon {
+      color: #10b981;
+    }
+  }
+}
+
+.cardFooter {
+  display: flex;
+  gap: 12px;
+  margin-top: auto;
+
+  @media (max-width: 480px) {
+    flex-direction: column;
+  }
+
+  .actionBtn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background-color: #4f46e5;
+    color: #ffffff;
+    padding: 12px 18px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2);
+    transition: all 0.2s;
+
+    &:hover {
+      background-color: #4338ca;
+      transform: translateY(-1px);
+      box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.3);
+    }
+
+    &.actionBtnSecondary {
+      background-color: #ffffff;
+      color: #475569;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+
+      &:hover {
+        background-color: #f8fafc;
+        border-color: #cbd5e1;
+        color: #1e293b;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+      }
+    }
+  }
+}
+
+/* Info / FAQ Card Styling */
+.infoCard {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 16px;
+  padding: 28px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
+
+  h3 {
+    font-size: 16px;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 0 0 20px;
+    letter-spacing: -0.01em;
+  }
+}
+
+.faqList {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.faqItem {
+  .faqTitle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #4f46e5;
+    margin-bottom: 8px;
+
+    h4 {
+      font-size: 14px;
+      font-weight: 700;
+      color: #1e293b;
+      margin: 0;
+    }
+  }
+
+  p {
+    font-size: 13px;
+    line-height: 1.6;
+    color: #64748b;
+    margin: 0;
+  }
+}
