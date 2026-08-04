@@ -9,7 +9,6 @@ import type { BankTransaction, InternalCompany, Client } from '../types';
 import { OcrService } from '../services/ocr.service';
 import { ReconciliationService } from '../services/reconciliation.service';
 import { 
-  Upload, 
   Lock, 
   AlertTriangle, 
   MoreVertical, 
@@ -250,12 +249,12 @@ export const BankManagement = () => {
   // Commit to Supabase
   const handleValidateAndCommit = async () => {
     if (parsedBatch.length === 0) {
-      alert('Error: No hay transacciones extraídas para confirmar.');
+      showAlert('error', 'Sin Transacciones', 'No hay transacciones extraídas para confirmar.');
       return;
     }
 
     if (!selectedCompanyId) {
-      alert('Seleccione un perfil de empresa bancario primero.');
+      showAlert('error', 'Selección Requerida', 'Seleccione un perfil de empresa bancario primero.');
       return;
     }
 
@@ -293,7 +292,7 @@ export const BankManagement = () => {
         }
       }
 
-      alert(`Se han ingestado y procesado ${parsedBatch.length} registros bancarios exitosamente.`);
+      showAlert('success', 'Ingestión Exitosa', `Se han ingestado y procesado ${parsedBatch.length} registros bancarios exitosamente.`);
       
       // Clean workspace
       setParsedBatch([]);
@@ -303,7 +302,7 @@ export const BankManagement = () => {
       loadTransactions();
     } catch (err: any) {
       console.error('Error committing transactions:', err);
-      alert(`Error al persistir transacciones: ${err.message}`);
+      showAlert('error', 'Error de Ingestión', `Error al persistir transacciones: ${err.message}`);
     } finally {
       setIsCommitting(false);
     }
@@ -315,7 +314,7 @@ export const BankManagement = () => {
       setMenuOpenRowId(null);
       loadTransactions();
     } catch (err: any) {
-      alert(`Error: ${err.message}`);
+      showAlert('error', 'Error de Actualización', `Error: ${err.message}`);
     }
   };
 
@@ -325,7 +324,7 @@ export const BankManagement = () => {
       setMenuOpenRowId(null);
       loadTransactions();
     } catch (err: any) {
-      alert(`Error: ${err.message}`);
+      showAlert('error', 'Error de Conciliación', `Error: ${err.message}`);
     }
   };
 
@@ -397,8 +396,8 @@ export const BankManagement = () => {
             <span className={styles.separator}>/</span>
             <span className={styles.activePage}>Gestión de Bancos</span>
           </div>
-          <h1 className={styles.pageTitle}>Bank Ingestion Workspace</h1>
-          <p className={styles.pageSub}>Manual reconciliation matching for high-security internal accounts.</p>
+          <h1 className={styles.pageTitle}>Espacio de Ingestión Bancaria</h1>
+          <p className={styles.pageSub}>Conciliación y emparejamiento manual de cuentas internas.</p>
         </div>
 
         <div className={styles.actions}>
@@ -411,28 +410,11 @@ export const BankManagement = () => {
               <option value="">Seleccionar Cuenta...</option>
               {companies.map(c => (
                 <option key={c.id} value={c.id}>
-                  {c.name} - Accounts
+                  {c.name} - Cuentas
                 </option>
               ))}
             </select>
           </div>
-
-          <button
-            className={styles.uploadBtn}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <Upload size={14} />
-            <span>CARGAR CAPTURA PRINCIPAL</span>
-          </button>
-
-          <button
-            className={styles.uploadBtn}
-            style={{ color: '#6366f1', borderColor: '#c7d2fe' }}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <Sparkles size={14} />
-            <span>CARGAR TRANS. FALTANTES</span>
-          </button>
           
           <input 
             type="file" 
@@ -455,7 +437,7 @@ export const BankManagement = () => {
           <div className={styles.paneHeader}>
             <span className={styles.paneTitle}>
               <Lock size={12} className={styles.paneTitleIcon} />
-              RAW BANK PORTAL CAPTURE
+              CAPTURA DE PORTAL BANCARIO
             </span>
             {systemPayloadId && (
               <span className={styles.payloadId}>ID: {systemPayloadId}</span>
@@ -510,7 +492,7 @@ export const BankManagement = () => {
           <div className={styles.paneHeader}>
             <span className={`${styles.paneTitle} ${styles.primaryAccent}`}>
               <Sparkles size={12} className={styles.paneTitleIcon} />
-              PARSED PREVIEW STREAM
+              FLUJO DE VISTA PREVIA PROCESADA
             </span>
           </div>
 
@@ -582,7 +564,7 @@ export const BankManagement = () => {
           {parsedBatch.length > 0 && (
             <div className={styles.entryFooter}>
               <div className={styles.batchInfo}>
-                <span>Lote: <strong>{parsedBatch.length} items</strong></span>
+                <span>Lote: <strong>{parsedBatch.length} transacciones</strong></span>
                 <span className={styles.dividerDot}></span>
                 <span>Fondeo: <strong className={styles.positiveText}>+{formatCurrency(totalInflow)}</strong></span>
                 <span className={styles.dividerDot}></span>
@@ -611,7 +593,7 @@ export const BankManagement = () => {
       {/* Historical Bank Ledger */}
       <section className={styles.ledgerSection}>
         <div className={styles.ledgerHeader}>
-          <h3 className={styles.ledgerTitle}>HISTORICAL BANK LEDGER</h3>
+          <h3 className={styles.ledgerTitle}>HISTORIAL DE TRANSACCIONES</h3>
           <div className={styles.ledgerBadges}>
             <div className={styles.badgeItem}>
               <span className={`${styles.badgeDot} ${styles.pendingDot}`}></span>
