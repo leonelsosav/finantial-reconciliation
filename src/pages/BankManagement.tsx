@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useDatabase } from '../hooks/useDatabase';
 import { supabase } from '../lib/supabase';
 import { DateEngine } from '../utils/DateEngine';
+import { ModalAlert } from '../components/ModalAlert';
 import type { BankTransaction, InternalCompany, Client } from '../types';
 import { PredictionService } from '../services/prediction.service';
 import { ReconciliationService } from '../services/reconciliation.service';
@@ -61,6 +62,29 @@ export const BankManagement = () => {
   const [splitWidth, setSplitWidth] = useState<number>(50);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isResizing, setIsResizing] = useState(false);
+
+  const [modalConfig, setModalConfig] = useState<{
+    isOpen: boolean;
+    type: 'info' | 'success' | 'error' | 'confirm';
+    title: string;
+    message: string;
+    onConfirm?: () => void;
+  }>({
+    isOpen: false,
+    type: 'info',
+    title: '',
+    message: ''
+  });
+
+  const showAlert = (type: 'info' | 'success' | 'error' | 'confirm', title: string, message: string, onConfirm?: () => void) => {
+    setModalConfig({
+      isOpen: true,
+      type,
+      title,
+      message,
+      onConfirm
+    });
+  };
 
   // Parsed grid state
   const [parsedBatch, setParsedBatch] = useState<ParsedTransaction[]>([]);
@@ -441,14 +465,22 @@ export const BankManagement = () => {
     }
   };
 
-  const handleDeleteLedgerRow = async (id: string) => {
-    if (!window.confirm('¿Está seguro de eliminar esta transacción de forma permanente?')) return;
+  const handleDeleteLedgerRow = (id: string) => {
+    showAlert(
+      'confirm',
+      'Eliminar Transacción',
+      '¿Está seguro de eliminar esta transacción de forma permanente?',
+      () => runDeleteLedgerRow(id)
+    );
+  };
+
+  const runDeleteLedgerRow = async (id: string) => {
     try {
       await deleteRecord(id);
       setMenuOpenRowId(null);
       loadTransactions();
     } catch (err: any) {
-      alert(`Error: ${err.message}`);
+      showAlert('error', 'Error al Eliminar', `Error: ${err.message}`);
     }
   };
 
@@ -868,6 +900,14 @@ export const BankManagement = () => {
           </div>
         </div>
       </section>
+      <ModalAlert 
+        isOpen={modalConfig.isOpen}
+        type={modalConfig.type}
+        title={modalConfig.title}
+        message={modalConfig.message}
+        onConfirm={modalConfig.onConfirm}
+        onClose={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 };

@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useDatabase } from '../hooks/useDatabase';
 import { supabase } from '../lib/supabase';
+import { ModalAlert } from '../components/ModalAlert';
 import type { Client, ClientGroup, InternalCompany, BillingRecord, BankTransaction } from '../types';
 import { 
   Plus, 
@@ -99,6 +100,29 @@ export const Directory = () => {
 
   // Dropdown active menus
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+
+  const [modalConfig, setModalConfig] = useState<{
+    isOpen: boolean;
+    type: 'info' | 'success' | 'error' | 'confirm';
+    title: string;
+    message: string;
+    onConfirm?: () => void;
+  }>({
+    isOpen: false,
+    type: 'info',
+    title: '',
+    message: ''
+  });
+
+  const showAlert = (type: 'info' | 'success' | 'error' | 'confirm', title: string, message: string, onConfirm?: () => void) => {
+    setModalConfig({
+      isOpen: true,
+      type,
+      title,
+      message,
+      onConfirm
+    });
+  };
 
   // Fetch initial data
   useEffect(() => {
@@ -412,12 +436,16 @@ export const Directory = () => {
     }
   };
 
-  const handleLoadRealCSVData = async () => {
-    const confirmed = window.confirm(
-      '¿Está seguro de cargar los datos reales? Esto eliminará todos los registros de clientes, grupos de clientes, empresas internas, transacciones bancarias y cargas contables existentes para realizar una importación limpia.'
+  const handleLoadRealCSVData = () => {
+    showAlert(
+      'confirm',
+      'Cargar Datos Reales',
+      '¿Está seguro de cargar los datos reales? Esto eliminará todos los registros de clientes, grupos de clientes, empresas internas, transacciones bancarias y cargas contables existentes para realizar una importación limpia.',
+      runLoadRealCSVData
     );
-    if (!confirmed) return;
+  };
 
+  const runLoadRealCSVData = async () => {
     setIsSeedingData(true);
     try {
       const commRes = await fetch('/csv/comisiones.csv');
@@ -707,7 +735,7 @@ export const Directory = () => {
           .eq('id', profile.id);
       }
 
-      alert('Base de datos real cargada exitosamente.');
+      showAlert('success', 'Importación Exitosa', 'Base de datos real cargada exitosamente.');
 
       fetchGroups();
       fetchClients();
@@ -717,7 +745,7 @@ export const Directory = () => {
 
     } catch (err: any) {
       console.error('Error seeding real database:', err);
-      alert('Error al cargar la base de datos real: ' + err.message);
+      showAlert('error', 'Error de Importación', 'Error al cargar la base de datos real: ' + err.message);
     } finally {
       setIsSeedingData(false);
     }
@@ -1373,6 +1401,14 @@ export const Directory = () => {
           </div>
         </>
       )}
+      <ModalAlert 
+        isOpen={modalConfig.isOpen}
+        type={modalConfig.type}
+        title={modalConfig.title}
+        message={modalConfig.message}
+        onConfirm={modalConfig.onConfirm}
+        onClose={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 };

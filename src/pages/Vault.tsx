@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useDatabase } from '../hooks/useDatabase';
 import { supabase } from '../lib/supabase';
 import { DateEngine } from '../utils/DateEngine';
+import { ModalAlert } from '../components/ModalAlert';
 import type { BillingRecord, Client, InternalCompany } from '../types';
 import { 
   CloudUpload, 
@@ -55,6 +56,29 @@ export const Vault = () => {
   const [ingestionLogs, setIngestionLogs] = useState<IngestionLog[]>([]);
   const [logSearchQuery, setLogSearchQuery] = useState('');
   const [logActiveTab, setLogActiveTab] = useState<'ALL' | 'SUCCESS' | 'ERROR'>('ALL');
+
+  const [modalConfig, setModalConfig] = useState<{
+    isOpen: boolean;
+    type: 'info' | 'success' | 'error' | 'confirm';
+    title: string;
+    message: string;
+    onConfirm?: () => void;
+  }>({
+    isOpen: false,
+    type: 'info',
+    title: '',
+    message: ''
+  });
+
+  const showAlert = (type: 'info' | 'success' | 'error' | 'confirm', title: string, message: string, onConfirm?: () => void) => {
+    setModalConfig({
+      isOpen: true,
+      type,
+      title,
+      message,
+      onConfirm
+    });
+  };
 
 
 
@@ -225,13 +249,13 @@ export const Vault = () => {
   // Processing routine for multiple files / folder
   const processUploadedFiles = async (filesList: FileList | File[]) => {
     if (clients.length === 0 || companies.length === 0) {
-      alert('Esperando que se carguen las entidades autorizadas. Intente de nuevo en unos segundos.');
+      showAlert('info', 'Cargando Catálogos', 'Esperando que se carguen las entidades autorizadas. Intente de nuevo en unos segundos.');
       return;
     }
 
     const xmlFiles = Array.from(filesList).filter(f => f.name.toLowerCase().endsWith('.xml'));
     if (xmlFiles.length === 0) {
-      alert('No se encontraron archivos XML válidos para procesar.');
+      showAlert('info', 'Sin Archivos XML', 'No se encontraron archivos XML válidos para procesar.');
       return;
     }
 
@@ -421,7 +445,7 @@ export const Vault = () => {
 
     if (parsedInvoices.length === 0) {
       setIngestionLogs(tempLogs);
-      alert('No se pudo extraer ninguna factura válida de los archivos cargados. Revise el panel de reporte para ver los errores.');
+      showAlert('error', 'Error de Ingestión', 'No se pudo extraer ninguna factura válida de los archivos cargados. Revise el panel de reporte para ver los errores.');
       setIsUploading(false);
       setActiveUploadFile(null);
       return;
@@ -495,7 +519,7 @@ export const Vault = () => {
       if (parsingErrorsCount > 0) {
         message += `- Errores de catálogo/formato (no guardados): ${parsingErrorsCount}\n`;
       }
-      alert(message);
+      showAlert('success', 'Ingestión Completada', message);
 
       // Reload audit list
       fetchBilling({
@@ -503,7 +527,7 @@ export const Vault = () => {
       });
     } catch (err: any) {
       console.error('Error al guardar facturas:', err);
-      alert(`Error al guardar facturas: ${err.message}`);
+      showAlert('error', 'Error al Guardar', `Error al guardar facturas: ${err.message}`);
       tempLogs.push({
         filename: 'Error general de base de datos',
         type: 'error',
@@ -516,10 +540,16 @@ export const Vault = () => {
       setActiveUploadFile(null);
       setUploadProgress(0);
     }
-  };  const handleClearVault = async () => {
-    const confirmClear = window.confirm('¿Está seguro de que desea limpiar la bóveda? Esto eliminará todas las facturas de la base de datos.');
-    if (!confirmClear) return;
+  };  const handleClearVault = () => {
+    showAlert(
+      'confirm',
+      'Limpiar Bóveda',
+      '¿Está seguro de que desea limpiar la bóveda? Esto eliminará todas las facturas de la base de datos.',
+      runClearVault
+    );
+  };
 
+  const runClearVault = async () => {
     setIsDeleting(true);
     try {
       const { error } = await supabase
@@ -529,13 +559,13 @@ export const Vault = () => {
 
       if (error) throw error;
       
-      alert('Bóveda limpiada con éxito.');
+      showAlert('success', 'Bóveda Limpiada', 'Bóveda limpiada con éxito.');
       fetchBilling({
         sort: { column: 'created_at', direction: 'desc' }
       });
     } catch (err: any) {
       console.error('Error al limpiar la bóveda:', err);
-      alert(`Error al limpiar la bóveda: ${err.message}`);
+      showAlert('error', 'Error al Limpiar', `Error al limpiar la bóveda: ${err.message}`);
     } finally {
       setIsDeleting(false);
     }
@@ -1020,6 +1050,14 @@ export const Vault = () => {
           </div>
         </div>
       )}
+      <ModalAlert 
+        isOpen={modalConfig.isOpen}
+        type={modalConfig.type}
+        title={modalConfig.title}
+        message={modalConfig.message}
+        onConfirm={modalConfig.onConfirm}
+        onClose={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 };
