@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase';
 import { DateEngine } from '../utils/DateEngine';
 import { ModalAlert } from '../components/ModalAlert';
 import type { BankTransaction, InternalCompany, Client } from '../types';
-import { PredictionService } from '../services/prediction.service';
+import { OcrService } from '../services/ocr.service';
 import { ReconciliationService } from '../services/reconciliation.service';
 import { 
   Upload, 
@@ -88,7 +88,6 @@ export const BankManagement = () => {
 
   // Parsed grid state
   const [parsedBatch, setParsedBatch] = useState<ParsedTransaction[]>([]);
-  const [mockType, setMockType] = useState<'main' | 'missing'>('main');
 
   // Historical ledger state
   const [menuOpenRowId, setMenuOpenRowId] = useState<string | null>(null);
@@ -178,185 +177,50 @@ export const BankManagement = () => {
     setIsDragActive(false);
   };
 
-  const processMockOCR = async (fileName: string) => {
-    setActiveUploadFile(fileName);
-    
-    // Generate system payload ID (e.g., BXC-992-ALPHA)
+  const processRealOCR = async (file: File) => {
+    setActiveUploadFile(file.name);
+
     const randomNum = Math.floor(Math.random() * 900) + 100;
     const alphaSuffix = ['ALPHA', 'BETA', 'GAMMA', 'DELTA'][Math.floor(Math.random() * 4)];
     setSystemPayloadId(`BXC-${randomNum}-${alphaSuffix}`);
-    
+
     setIsProcessing(true);
     setProcessingProgress(0);
     setParsedBatch([]);
 
-    // Progress simulation
-    let currentProgress = 0;
-    const interval = setInterval(async () => {
-      currentProgress += 10;
-      setProcessingProgress(currentProgress);
-      if (currentProgress >= 100) {
-        clearInterval(interval);
-        
-        // Use local system date formatted as DD/MM/YYYY
-        const todayStr = DateEngine.getLocalYYYYMMDD(new Date());
-        const dateParts = todayStr.split('-');
-        const formattedDate = dateParts.length === 3 ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}` : '15/05/2024';
-
-        // Predefined mock statement transactions designed to perfectly align with Vault.tsx
-        // - Deposit: +125,000.00 (matches Vault's first invoice)
-        // - Fee: -5,000.00 (matches Vault's third invoice)
-        // - Withdrawal: -3,000.00 (unmatched opex exception)
-        // - Deposit: +72,400.00 (matches Vault's fourth invoice)
-        // - Deposit: +45,200.00 (matches Vault's fifth invoice)
-        // - Fee: -1,500.00 (matches Vault's sixth invoice)
-        // NOTE: Vault's second invoice (+95,000.00) remains unmatched.
-        const mockBatch: ParsedTransaction[] = mockType === 'main' ? [
-          {
-            id: '1',
-            date: formattedDate,
-            description: 'TRANSFERENCIA INTERBANCARIA SPEI RECIBIDA',
-            reference: `SPEI-${Math.floor(10000 + Math.random() * 90000)}`,
-            amount: 125000.00,
-            lowConfidence: false
-          },
-          {
-            id: '3',
-            date: formattedDate,
-            description: 'RETIRO EFECTIVO CAJERO AUTOMATICO',
-            reference: `ATM-${Math.floor(1000 + Math.random() * 9000)}`,
-            amount: -3000.00,
-            lowConfidence: false
-          },
-          {
-            id: '4',
-            date: formattedDate,
-            description: 'TRANSFERENCIA INTERBANCARIA SPEI RECIBIDA',
-            reference: `SPEI-${Math.floor(10000 + Math.random() * 90000)}`,
-            amount: 72400.00,
-            lowConfidence: false
-          },
-          {
-            id: '5',
-            date: formattedDate,
-            description: 'TRANSFERENCIA INTERBANCARIA SPEI RECIBIDA',
-            reference: `SPEI-${Math.floor(10000 + Math.random() * 90000)}`,
-            amount: 45200.00,
-            lowConfidence: false
-          },
-          {
-            id: '7',
-            date: formattedDate,
-            description: 'PAGO DE NOMINA SPEI',
-            reference: `SPEI-${Math.floor(10000 + Math.random() * 90000)}`,
-            amount: -118750.00,
-            lowConfidence: false
-          },
-          {
-            id: '8',
-            date: formattedDate,
-            description: 'PAGO DE NOMINA SPEI',
-            reference: `SPEI-${Math.floor(10000 + Math.random() * 90000)}`,
-            amount: -68780.00,
-            lowConfidence: false
-          },
-          {
-            id: '9',
-            date: formattedDate,
-            description: 'PAGO DE NOMINA SPEI',
-            reference: `SPEI-${Math.floor(10000 + Math.random() * 90000)}`,
-            amount: -42940.00,
-            lowConfidence: false
-          }
-        ] : [
-          {
-            id: '10',
-            date: formattedDate,
-            description: 'TRANSFERENCIA INTERBANCARIA SPEI RECIBIDA',
-            reference: `SPEI-${Math.floor(10000 + Math.random() * 90000)}`,
-            amount: 95000.00,
-            lowConfidence: false
-          },
-          {
-            id: '11',
-            date: formattedDate,
-            description: 'PAGO DE NOMINA SPEI',
-            reference: `SPEI-${Math.floor(10000 + Math.random() * 90000)}`,
-            amount: -90250.00,
-            lowConfidence: false
-          },
-          {
-            id: '12',
-            date: formattedDate,
-            description: 'TRANSFERENCIA INTERBANCARIA SPEI RECIBIDA',
-            reference: `SPEI-${Math.floor(10000 + Math.random() * 90000)}`,
-            amount: 5000.00,
-            lowConfidence: false
-          },
-          {
-            id: '13',
-            date: formattedDate,
-            description: 'PAGO DE NOMINA SPEI',
-            reference: `SPEI-${Math.floor(10000 + Math.random() * 90000)}`,
-            amount: -4750.00,
-            lowConfidence: false
-          },
-          {
-            id: '14',
-            date: formattedDate,
-            description: 'TRANSFERENCIA INTERBANCARIA SPEI RECIBIDA',
-            reference: `SPEI-${Math.floor(10000 + Math.random() * 90000)}`,
-            amount: 3000.00,
-            lowConfidence: false
-          },
-          {
-            id: '15',
-            date: formattedDate,
-            description: 'PAGO DE NOMINA SPEI',
-            reference: `SPEI-${Math.floor(10000 + Math.random() * 90000)}`,
-            amount: -2850.00,
-            lowConfidence: false
-          }
-        ];
-        
-        try {
-          const enrichedBatch = await Promise.all(
-            mockBatch.map(async (row) => {
-              const prediction = await PredictionService.predictClientFromDescription(row.description, row.amount);
-              return {
-                ...row,
-                client_id: prediction?.client_id || ''
-              };
-            })
-          );
-          setParsedBatch(enrichedBatch);
-        } catch (err) {
-          console.error('[BankManagement] Prediction failed, using fallback', err);
-          setParsedBatch(mockBatch);
-        }
-        setIsProcessing(false);
-      }
-    }, 150);
+    try {
+      const transactions = await OcrService.processScreenshot(file, (pct) => {
+        setProcessingProgress(pct);
+      });
+      setParsedBatch(transactions);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error desconocido';
+      console.error('[BankManagement] OCR failed:', message);
+      showAlert('error', 'Error de OCR', `No se pudo extraer la información de la captura: ${message}`);
+      setCaptureUrl(null);
+      setActiveUploadFile(null);
+      setSystemPayloadId('');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragActive(false);
-    
+
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0];
-      const url = URL.createObjectURL(file);
-      setCaptureUrl(url);
-      processMockOCR(file.name);
+      setCaptureUrl(URL.createObjectURL(file));
+      processRealOCR(file);
     }
   };
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      const url = URL.createObjectURL(file);
-      setCaptureUrl(url);
-      processMockOCR(file.name);
+      setCaptureUrl(URL.createObjectURL(file));
+      processRealOCR(file);
     }
   };
 
@@ -553,24 +417,18 @@ export const BankManagement = () => {
             </select>
           </div>
 
-          <button 
+          <button
             className={styles.uploadBtn}
-            onClick={() => {
-              setMockType('main');
-              setTimeout(() => fileInputRef.current?.click(), 50);
-            }}
+            onClick={() => fileInputRef.current?.click()}
           >
             <Upload size={14} />
             <span>CARGAR CAPTURA PRINCIPAL</span>
           </button>
 
-          <button 
+          <button
             className={styles.uploadBtn}
             style={{ color: '#6366f1', borderColor: '#c7d2fe' }}
-            onClick={() => {
-              setMockType('missing');
-              setTimeout(() => fileInputRef.current?.click(), 50);
-            }}
+            onClick={() => fileInputRef.current?.click()}
           >
             <Sparkles size={14} />
             <span>CARGAR TRANS. FALTANTES</span>
@@ -703,7 +561,7 @@ export const BankManagement = () => {
                           <option value="">-- No asignado (Opex/Excepción) --</option>
                           {clients.map(c => (
                             <option key={c.id} value={c.id}>
-                              {c.name}
+                              {c.legal_name || c.name}
                             </option>
                           ))}
                         </select>
