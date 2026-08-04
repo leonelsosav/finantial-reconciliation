@@ -1034,7 +1034,12 @@ export const Vault = () => {
                             {record.invoice_uuid ? `${record.invoice_uuid.slice(0, 8)}...${record.invoice_uuid.slice(-6)}` : 'S/N'}
                           </td>
                           <td className={styles.clientCell} title={recordClientName}>
-                            {recordClientName}
+                            <div className={styles.tableClientGroup}>
+                              <span className={styles.tableClientName}>{recordClientName}</span>
+                              {recordClient?.legal_name && (
+                                <span className={styles.tableClientSub}>{recordClient.legal_name}</span>
+                              )}
+                            </div>
                           </td>
                           <td className={styles.dateCell}>{record.operation_date}</td>
                           <td className={`${styles.rightAlign} ${styles.monoCell}`}>
