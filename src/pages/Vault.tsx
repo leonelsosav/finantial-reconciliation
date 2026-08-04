@@ -17,9 +17,19 @@ import {
   Filter,
   ChevronLeft,
   ChevronRight,
-  Trash2
+  CheckCircle2,
+  ClipboardList
 } from 'lucide-react';
 import styles from './Vault.module.scss';
+
+interface IngestionLog {
+  filename: string;
+  type: 'success' | 'warning' | 'error';
+  message: string;
+  uuid?: string;
+  amount?: number;
+  timestamp: string;
+}
 
 export const Vault = () => {
   const { profile } = useAuth();
@@ -34,24 +44,19 @@ export const Vault = () => {
   const { data: companies, fetchData: fetchCompanies } = useDatabase<InternalCompany>('internal_companies');
 
   // Ingestion state
-  const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
   const [dragActive, setDragActive] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
   const [uploadProgress, setUploadProgress] = useState(0);
   const [activeUploadFile, setActiveUploadFile] = useState<string | null>(null);
 
-  // Set default company when companies load
-  useEffect(() => {
-    if (companies.length > 0 && !selectedCompanyId) {
-      const defaultCompany = companies.find(c => c.id === profile?.internal_company_id) || companies[0];
-      setSelectedCompanyId(defaultCompany.id);
-    }
-  }, [companies, profile, selectedCompanyId]);
+  // Ingestion reporting states
+  const [ingestionLogs, setIngestionLogs] = useState<IngestionLog[]>([]);
+  const [logSearchQuery, setLogSearchQuery] = useState('');
+  const [logActiveTab, setLogActiveTab] = useState<'ALL' | 'SUCCESS' | 'ERROR'>('ALL');
 
-  // Queue state for active session
-  const [sessionQueueCount, setSessionQueueCount] = useState(0);
-  const [sessionErrorsCount, setSessionErrorsCount] = useState(0);
+
 
   // Drawer overlay state
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -68,6 +73,24 @@ export const Vault = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'VERIFIED' | 'PROCESSED'>('ALL');
   const [showFilterMenu, setShowFilterMenu] = useState(false);
+
+  // Ingestion stats derivations
+  const successLogsCount = useMemo(() => ingestionLogs.filter(l => l.type === 'success').length, [ingestionLogs]);
+  const errorLogsCount = useMemo(() => ingestionLogs.filter(l => l.type === 'error').length, [ingestionLogs]);
+
+  const filteredLogs = useMemo(() => {
+    return ingestionLogs.filter(log => {
+      // 1. Search filter
+      const matchesSearch = log.filename.toLowerCase().includes(logSearchQuery.toLowerCase()) || 
+        log.message.toLowerCase().includes(logSearchQuery.toLowerCase()) ||
+        (log.uuid && log.uuid.toLowerCase().includes(logSearchQuery.toLowerCase()));
+
+      // 2. Tab filter
+      if (logActiveTab === 'SUCCESS') return matchesSearch && log.type === 'success';
+      if (logActiveTab === 'ERROR') return matchesSearch && log.type === 'error';
+      return matchesSearch;
+    });
+  }, [ingestionLogs, logSearchQuery, logActiveTab]);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -193,12 +216,6 @@ export const Vault = () => {
     }
   };
 
-  const handleFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      await processUploadedFiles(e.target.files);
-    }
-  };
-
   const handleFolderInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       await processUploadedFiles(e.target.files);
@@ -207,10 +224,6 @@ export const Vault = () => {
 
   // Processing routine for multiple files / folder
   const processUploadedFiles = async (filesList: FileList | File[]) => {
-    if (!selectedCompanyId) {
-      alert('Por favor, seleccione una empresa interna antes de cargar las facturas.');
-      return;
-    }
     if (clients.length === 0 || companies.length === 0) {
       alert('Esperando que se carguen las entidades autorizadas. Intente de nuevo en unos segundos.');
       return;
@@ -242,13 +255,14 @@ export const Vault = () => {
 
     setIsUploading(true);
     setUploadProgress(0);
-    setSessionErrorsCount(0);
+    setIngestionLogs([]);
 
     const totalFiles = xmlFiles.length;
     let parsedCount = 0;
     let successCount = 0;
-    let warningCount = 0;
     const parsedInvoices: any[] = [];
+    const tempLogs: IngestionLog[] = [];
+    const uuidToFilenameMap = new Map<string, string>();
 
     // Helper to read file text content
     const readFileText = (file: File): Promise<string> => {
@@ -300,9 +314,12 @@ export const Vault = () => {
           throw new Error('No se encontró el nodo Comprobante');
         }
 
+        const emisorEl = getElementByLocalName(xmlDoc, 'Emisor');
         const receptorEl = getElementByLocalName(xmlDoc, 'Receptor');
         const timbreEl = getElementByLocalName(xmlDoc, 'TimbreFiscalDigital');
 
+        const emisorRfc = emisorEl?.getAttribute('Rfc') || '';
+        const emisorNombre = emisorEl?.getAttribute('Nombre') || '';
         const receptorRfc = receptorEl?.getAttribute('Rfc') || '';
         const receptorNombre = receptorEl?.getAttribute('Nombre') || '';
         const uuid = timbreEl?.getAttribute('UUID') || '';
@@ -314,7 +331,23 @@ export const Vault = () => {
           throw new Error('No se encontró el UUID del timbre fiscal (UUID)');
         }
 
-        // Match Client by Receptor RFC (case-insensitive)
+        uuidToFilenameMap.set(uuid, file.name);
+
+        // 1. Match Internal Company by Emisor RFC (case-insensitive)
+        let matchedCompany = companies.find(c => c.tax_id?.trim().toUpperCase() === emisorRfc.trim().toUpperCase());
+        if (!matchedCompany && emisorNombre) {
+          matchedCompany = companies.find(c => 
+            emisorNombre.toLowerCase().includes(c.name.toLowerCase()) ||
+            c.name.toLowerCase().includes(emisorNombre.toLowerCase())
+          );
+        }
+
+        let internalCompanyId = matchedCompany?.id;
+        if (!internalCompanyId) {
+          throw new Error(`Emisor (${emisorRfc}) no configurado como empresa interna.`);
+        }
+
+        // 2. Match Client by Receptor RFC (case-insensitive)
         let matchedClient = clients.find(c => c.tax_id?.trim().toUpperCase() === receptorRfc.trim().toUpperCase());
 
         // Substring / Name fallback if RFC does not match directly
@@ -328,15 +361,26 @@ export const Vault = () => {
         }
 
         let clientId = matchedClient?.id;
-        if (!clientId) {
-          // Fallback to first client under the selected company, or first client globally
-          const companyClients = clients.filter(c => c.internal_company_id === selectedCompanyId);
-          if (companyClients.length > 0) {
-            clientId = companyClients[0].id;
-          } else if (clients.length > 0) {
-            clientId = clients[0].id;
+        const isIntercompany = companies.some(c => c.tax_id?.trim().toUpperCase() === receptorRfc.trim().toUpperCase());
+
+        if (!clientId && isIntercompany) {
+          // If Receptor is an internal company, try to match by RFC in clients table first
+          const intercompanyClient = clients.find(c => c.tax_id?.trim().toUpperCase() === receptorRfc.trim().toUpperCase());
+          if (intercompanyClient) {
+            clientId = intercompanyClient.id;
+          } else {
+            // Fallback to first client under the resolved company or first globally to satisfy DB constraint
+            const companyClients = clients.filter(c => c.internal_company_id === internalCompanyId);
+            if (companyClients.length > 0) {
+              clientId = companyClients[0].id;
+            } else if (clients.length > 0) {
+              clientId = clients[0].id;
+            }
           }
-          warningCount++;
+        }
+
+        if (!clientId) {
+          throw new Error(`Receptor (${receptorRfc}) no registrado en el catálogo de clientes.`);
         }
 
         const clientObj = clients.find(c => c.id === clientId);
@@ -346,7 +390,7 @@ export const Vault = () => {
 
         parsedInvoices.push({
           client_id: clientId,
-          internal_company_id: selectedCompanyId,
+          internal_company_id: internalCompanyId,
           invoice_uuid: uuid,
           is_invoiced: true,
           virtual_bucket_label: null,
@@ -354,7 +398,7 @@ export const Vault = () => {
           amount_commission: amountCommission,
           amount_net_payroll: amountNetPayroll,
           entry_type: 'payroll_funding',
-          description: batchName, // Save batch label in description for grouping
+          description: isIntercompany ? `${batchName} (Intercompañía)` : batchName, // Save batch label in description for grouping
           operation_date: operationDate,
           is_reconciled: false,
           imported_by: profile?.id || null
@@ -363,7 +407,12 @@ export const Vault = () => {
         successCount++;
       } catch (err: any) {
         console.error(`Error al procesar archivo ${file.name}:`, err);
-        setSessionErrorsCount(prev => prev + 1);
+        tempLogs.push({
+          filename: file.name,
+          type: 'error',
+          message: err.message || 'Error de procesamiento XML',
+          timestamp: new Date().toLocaleTimeString()
+        });
       }
 
       parsedCount++;
@@ -371,7 +420,8 @@ export const Vault = () => {
     }
 
     if (parsedInvoices.length === 0) {
-      alert('No se pudo extraer ninguna factura válida de los archivos cargados.');
+      setIngestionLogs(tempLogs);
+      alert('No se pudo extraer ninguna factura válida de los archivos cargados. Revise el panel de reporte para ver los errores.');
       setIsUploading(false);
       setActiveUploadFile(null);
       return;
@@ -409,15 +459,41 @@ export const Vault = () => {
         if (insertError) throw insertError;
       }
 
-      setSessionQueueCount(prev => prev + uniqueParsedInvoices.length);
+      // Build report log objects
+      parsedInvoices.forEach(inv => {
+        const isDuplicate = existingUuids.has(inv.invoice_uuid);
+        const fileName = uuidToFilenameMap.get(inv.invoice_uuid) || 'Factura';
+        if (isDuplicate) {
+          tempLogs.push({
+            filename: fileName,
+            type: 'error',
+            message: `Factura duplicada. UUID ya registrado en el sistema.`,
+            uuid: inv.invoice_uuid,
+            amount: inv.amount_gross,
+            timestamp: new Date().toLocaleTimeString()
+          });
+        } else {
+          tempLogs.push({
+            filename: fileName,
+            type: 'success',
+            message: 'Cargada con éxito.',
+            uuid: inv.invoice_uuid,
+            amount: inv.amount_gross,
+            timestamp: new Date().toLocaleTimeString()
+          });
+        }
+      });
+
+      setIngestionLogs(tempLogs);
 
       let message = `Ingestión finalizada.\n`;
       message += `- Cargadas con éxito: ${uniqueParsedInvoices.length} facturas\n`;
       if (duplicatesCount > 0) {
         message += `- Omitidas por duplicadas: ${duplicatesCount}\n`;
       }
-      if (warningCount > 0) {
-        message += `- Advertencias (clientes no identificados asignados por defecto): ${warningCount}\n`;
+      const parsingErrorsCount = tempLogs.filter(l => l.type === 'error' && !l.message.includes('duplicada')).length;
+      if (parsingErrorsCount > 0) {
+        message += `- Errores de catálogo/formato (no guardados): ${parsingErrorsCount}\n`;
       }
       alert(message);
 
@@ -428,59 +504,44 @@ export const Vault = () => {
     } catch (err: any) {
       console.error('Error al guardar facturas:', err);
       alert(`Error al guardar facturas: ${err.message}`);
+      tempLogs.push({
+        filename: 'Error general de base de datos',
+        type: 'error',
+        message: err.message || 'Error de conexión',
+        timestamp: new Date().toLocaleTimeString()
+      });
+      setIngestionLogs(tempLogs);
     } finally {
       setIsUploading(false);
       setActiveUploadFile(null);
       setUploadProgress(0);
     }
-  };
-
-  const handleClearVault = async () => {
-    const confirmClear = window.confirm(
-      '¿Está seguro de que desea eliminar todos los registros de la Bóveda de Ingestión? Esta acción no se puede deshacer.'
-    );
+  };  const handleClearVault = async () => {
+    const confirmClear = window.confirm('¿Está seguro de que desea limpiar la bóveda? Esto eliminará todas las facturas de la base de datos.');
     if (!confirmClear) return;
 
     setIsDeleting(true);
     try {
-      // 1. Delete billing records
-      const { error: billingErr } = await supabase
+      const { error } = await supabase
         .from('billing_records')
         .delete()
         .neq('id', '00000000-0000-0000-0000-000000000000');
+
+      if (error) throw error;
       
-      if (billingErr) throw billingErr;
-
-      // 2. Delete bank transactions
-      const { error: bankErr } = await supabase
-        .from('bank_transactions')
-        .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000');
-      
-      if (bankErr) throw bankErr;
-
-      // 3. Reset client cushion balances to 0
-      const { error: clientErr } = await supabase
-        .from('clients')
-        .update({ retainer_balance: 0 })
-        .neq('id', '00000000-0000-0000-0000-000000000000');
-
-      if (clientErr) throw clientErr;
-
-      alert('Todos los registros de la bóveda, movimientos bancarios y saldos de clientes fueron eliminados con éxito.');
-      
-      setSessionQueueCount(0);
-      setSessionErrorsCount(0);
+      alert('Bóveda limpiada con éxito.');
       fetchBilling({
         sort: { column: 'created_at', direction: 'desc' }
       });
     } catch (err: any) {
-      console.error('Error clearing vault:', err);
+      console.error('Error al limpiar la bóveda:', err);
       alert(`Error al limpiar la bóveda: ${err.message}`);
     } finally {
       setIsDeleting(false);
     }
   };
+
+
 
   const handleOpenDrawer = (group: typeof uploadGroups[0]) => {
     setSelectedGroup(group);
@@ -524,19 +585,8 @@ export const Vault = () => {
             <span className={styles.activePage}>Carga de Facturas</span>
           </div>
           <h1 className={styles.pageTitle}>Carga de Facturas</h1>
-          <p className={styles.pageSub}>Pasarela de validación para XML de CONTPAQi® y registros contables Excel.</p>
         </div>
         <div className={styles.headerActions}>
-          <button 
-            type="button" 
-            className={styles.clearBtn} 
-            onClick={handleClearVault}
-            disabled={isDeleting}
-          >
-            <Trash2 size={14} />
-            <span>{isDeleting ? 'Limpiando...' : 'Limpiar Bóveda'}</span>
-          </button>
-          
           <div className={styles.authBadge}>
             <ShieldCheck size={18} className={styles.authIcon} />
             <div>
@@ -556,24 +606,6 @@ export const Vault = () => {
               Carga Contable CFDI
             </h3>
             <span className={styles.tagBadge}>Cifrado AES-256</span>
-          </div>
-
-          <div className={styles.companySelectWrapper}>
-            <label htmlFor="companySelect" className={styles.selectLabel}>Empresa Interna Destino</label>
-            <select
-              id="companySelect"
-              className={styles.companySelect}
-              value={selectedCompanyId}
-              onChange={(e) => setSelectedCompanyId(e.target.value)}
-              disabled={isUploading}
-            >
-              <option value="" disabled>Seleccione una empresa...</option>
-              {companies.map(c => (
-                <option key={c.id} value={c.id}>
-                  {c.name} {c.tax_id ? `(${c.tax_id})` : ''}
-                </option>
-              ))}
-            </select>
           </div>
 
           <div 
@@ -600,14 +632,6 @@ export const Vault = () => {
               <div>
                 <input 
                   type="file" 
-                  id="file-upload-input"
-                  className={styles.fileInput} 
-                  onChange={handleFileInput}
-                  multiple
-                  accept=".xml"
-                />
-                <input 
-                  type="file" 
                   id="folder-upload-input"
                   className={styles.fileInput} 
                   ref={(input) => {
@@ -621,17 +645,10 @@ export const Vault = () => {
                 <div className={styles.uploadIconCircle}>
                   <CloudUpload size={32} />
                 </div>
-                <p className={styles.dropTextPrimary}>Arrastre archivos XML o carpetas aquí</p>
-                <p className={styles.dropTextSecondary}>Carga de facturas XML individuales o carpetas de facturación</p>
+                <p className={styles.dropTextPrimary}>Arrastre carpetas XML aquí</p>
+                <p className={styles.dropTextSecondary}>Carga automática de carpetas de facturación (CFDI)</p>
                 
                 <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '12px' }}>
-                  <button 
-                    type="button" 
-                    className={styles.selectBtn}
-                    onClick={() => document.getElementById('file-upload-input')?.click()}
-                  >
-                    Seleccionar Archivos
-                  </button>
                   <button 
                     type="button" 
                     className={styles.folderBtn}
@@ -639,55 +656,167 @@ export const Vault = () => {
                   >
                     Seleccionar Carpeta
                   </button>
+                  <button 
+                    type="button" 
+                    className={styles.clearBtn}
+                    onClick={handleClearVault}
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? 'Limpiando...' : 'Limpiar Bóveda'}
+                  </button>
                 </div>
               </div>
             )}
           </div>
 
           <div className={styles.cardFooter}>
-            <div className={styles.stabilityRow}>
-              <span>Estabilidad del Servidor SAT</span>
-              <span className={styles.stabilityPct}>100.0%</span>
-            </div>
             <div className={styles.stabilityBarTrack}>
               <div className={styles.stabilityBarFill}></div>
             </div>
           </div>
         </section>
 
-        {/* Session Queue Stats */}
-        <section className={styles.statsPanel}>
-          {/* Session Queue Counts */}
-          <div className={styles.statsCardGrid}>
-            <div className={styles.statsCard}>
-              <span className={styles.statsLabel}>Ingestados en esta Sesión</span>
-              <div className={styles.statsValueWrapper}>
-                <span className={styles.statsValue}>{sessionQueueCount}</span>
-                <span className={styles.statsStatusBadgeSuccess}>Válidos</span>
-              </div>
-              <p className={styles.statsSub}>Cargados y listos para conciliar</p>
-            </div>
-
-            <div className={styles.statsCard}>
-              <span className={styles.statsLabel}>Errores de Lectura SAT</span>
-              <div className={styles.statsValueWrapper}>
-                <span className={styles.statsValue}>{sessionErrorsCount}</span>
-                <span className={`${styles.statsStatusBadgeError} ${sessionErrorsCount > 0 ? styles.active : ''}`}>
-                  Alertas
-                </span>
-              </div>
-              <p className={styles.statsSub}>Formato incorrecto o UUID duplicado</p>
-            </div>
+        {/* Report Card Panel */}
+        <section className={styles.reportCard}>
+          <div className={styles.cardHeader}>
+            <h3 className={styles.cardTitle}>
+              <ClipboardList size={16} />
+              Reporte de Alertas e Inconsistencias
+            </h3>
+            {ingestionLogs.length > 0 && (
+              <span className={styles.tagBadge}>
+                {ingestionLogs.length} Eventos
+              </span>
+            )}
           </div>
+
+          {ingestionLogs.length === 0 ? (
+            <div className={styles.reportEmpty}>
+              <div className={styles.emptyIcon}>
+                <ClipboardList size={48} strokeWidth={1.5} />
+              </div>
+              <h4 className={styles.emptyTextTitle}>Sin actividad en esta sesión</h4>
+              <p className={styles.emptyTextSub}>
+                Cargue una carpeta de facturas XML para ver los diagnósticos de validación, duplicados y alertas en tiempo real.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Summary Badges */}
+              <div className={styles.summaryBar}>
+                <div className={`${styles.summaryBadge} ${styles.badgeSuccess}`}>
+                  <span>{successLogsCount}</span>
+                  <span>Exitosos</span>
+                </div>
+                <div className={`${styles.summaryBadge} ${styles.badgeError}`}>
+                  <span>{errorLogsCount}</span>
+                  <span>Errores</span>
+                </div>
+              </div>
+
+              {/* Filters & Search */}
+              <div className={styles.logFilterRow}>
+                <div className={styles.logSearchWrapper}>
+                  <Search size={14} className={styles.logSearchIcon} />
+                  <input
+                    type="text"
+                    placeholder="Buscar por archivo, UUID o mensaje..."
+                    className={styles.logSearchInput}
+                    value={logSearchQuery}
+                    onChange={(e) => setLogSearchQuery(e.target.value)}
+                  />
+                </div>
+
+                <div className={styles.logFilterTabs}>
+                  <button
+                    type="button"
+                    className={`${styles.logFilterTab} ${logActiveTab === 'ALL' ? styles.active : ''}`}
+                    onClick={() => setLogActiveTab('ALL')}
+                  >
+                    Todos
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.logFilterTab} ${logActiveTab === 'SUCCESS' ? styles.active : ''}`}
+                    onClick={() => setLogActiveTab('SUCCESS')}
+                  >
+                    Éxitos
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.logFilterTab} ${logActiveTab === 'ERROR' ? styles.active : ''}`}
+                    onClick={() => setLogActiveTab('ERROR')}
+                  >
+                    Errores
+                  </button>
+                </div>
+              </div>
+
+              {/* Scrollable logs list */}
+              <div className={styles.logsList}>
+                {filteredLogs.length === 0 ? (
+                  <p style={{ textAlign: 'center', fontSize: '11px', color: '#64748b', padding: '16px 0' }}>
+                    No se encontraron eventos con los filtros actuales
+                  </p>
+                ) : (
+                  filteredLogs.map((log, index) => {
+                    const isSuccess = log.type === 'success';
+
+                    return (
+                      <div
+                        key={index}
+                        className={`${styles.logItem} ${
+                          isSuccess ? styles.itemSuccess : styles.itemError
+                        }`}
+                      >
+                        <div
+                          className={`${styles.logTypeIcon} ${
+                            isSuccess ? styles.iconSuccess : styles.iconError
+                          }`}
+                        >
+                          {isSuccess ? (
+                            <CheckCircle2 size={16} />
+                          ) : (
+                            <AlertCircle size={16} />
+                          )}
+                        </div>
+
+                        <div className={styles.logDetails}>
+                          <span className={styles.logFileName} title={log.filename}>
+                            {log.filename}
+                          </span>
+                          <span className={styles.logMessage}>{log.message}</span>
+                          <div className={styles.logMetaRow}>
+                            <span>Hora: {log.timestamp}</span>
+                            {log.uuid && (
+                              <span style={{ fontFamily: 'monospace' }}>
+                                UUID: ...{log.uuid.slice(-12)}
+                              </span>
+                            )}
+                            {log.amount !== undefined && (
+                              <span>
+                                Monto: ${log.amount.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </>
+          )}
         </section>
+
       </div>
 
       {/* Audit Logs Table */}
       <section className={styles.logTableCard}>
         <div className={styles.logTableHeader}>
           <div className={styles.logTitleGroup}>
-            <h3 className={styles.logTableTitle}>Historial de Ingestión Audit Log</h3>
-            <span className={styles.liveBadge}>LIVE</span>
+            <h3 className={styles.logTableTitle}>Historial de Ingestión</h3>
+            <span className={styles.liveBadge}></span>
           </div>
 
           <div className={styles.controlsGroup}>

@@ -1,8 +1,5 @@
-import { useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { useDatabase } from '../hooks/useDatabase';
-import type { InternalCompany } from '../types';
 import {
   LogOut,
   LayoutDashboard,
@@ -16,14 +13,8 @@ import {
 import styles from './MainLayout.module.scss';
 
 export const MainLayout = () => {
-  const { profile, signOut, selectedCompanyId, setSelectedCompanyId } = useAuth();
+  const { profile, signOut } = useAuth();
   const navigate = useNavigate();
-
-  const { data: companies, fetchData: fetchCompanies } = useDatabase<InternalCompany>('internal_companies');
-
-  useEffect(() => {
-    fetchCompanies();
-  }, [fetchCompanies]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -119,25 +110,6 @@ export const MainLayout = () => {
         {/* TopNavBar */}
         <header className={styles.topHeader}>
           <div className={styles.headerLeft}>
-            <div className={styles.entitySelector}>
-              <Building2 size={16} className={styles.entityIcon} />
-              <span className={styles.entityLabel}>Selector de Entidad:</span>
-              <select
-                value={selectedCompanyId}
-                onChange={(e) => setSelectedCompanyId(e.target.value)}
-                disabled={profile?.role !== 'owner'}
-                className={styles.entitySelectDropdown}
-              >
-                {profile?.role === 'owner' && (
-                  <option value="">Todas las Entidades</option>
-                )}
-                {companies.map(company => (
-                  <option key={company.id} value={company.id}>
-                    {company.name}
-                  </option>
-                ))}
-              </select>
-            </div>
           </div>
 
           <div className={styles.headerRight}>
