@@ -281,7 +281,12 @@ export const Vault = () => {
       setActiveUploadFile(file.name);
 
       try {
-        const xmlText = await readFileText(file);
+        let xmlText = await readFileText(file);
+        // Strip any junk characters (like BOM or odd leading indicators) before <?xml tag
+        const xmlStartIdx = xmlText.indexOf('<?xml');
+        if (xmlStartIdx > 0) {
+          xmlText = xmlText.substring(xmlStartIdx);
+        }
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
 

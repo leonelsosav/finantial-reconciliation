@@ -40,7 +40,7 @@ export const Dashboard = () => {
   const { updateRecord } = useDatabase<Client>('clients');
 
   const [timeframe, setTimeframe] = useState<'30days' | '7days' | '90days' | 'currentMonth'>('30days');
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [showExplainers, setShowExplainers] = useState<boolean>(false);
   const [reconciliationModal, setReconciliationModal] = useState<{
     isOpen: boolean;
@@ -322,6 +322,7 @@ export const Dashboard = () => {
         return {
           id: client.id,
           name: client.name,
+          legal_name: client.legal_name || client.name,
           values: colValues,
           total: clientTotal
         };
@@ -371,6 +372,7 @@ export const Dashboard = () => {
         return {
           id: client.id,
           name: client.name,
+          legal_name: client.legal_name || client.name,
           values: colValues,
           total: clientTotal
         };
@@ -442,7 +444,7 @@ export const Dashboard = () => {
   }, [matrixColumns, filteredBillingRecords, filteredBankTxs]);
 
   const toggleGroup = (groupId: string) => {
-    setCollapsedGroups(prev => ({
+    setExpandedGroups(prev => ({
       ...prev,
       [groupId]: !prev[groupId]
     }));
@@ -450,18 +452,18 @@ export const Dashboard = () => {
 
   const areAllCollapsed = useMemo(() => {
     if (matrixData.length === 0) return false;
-    return matrixData.every(group => collapsedGroups[group.id]);
-  }, [matrixData, collapsedGroups]);
+    return matrixData.every(group => !expandedGroups[group.id]);
+  }, [matrixData, expandedGroups]);
 
   const handleToggleAllGroups = () => {
     if (areAllCollapsed) {
-      setCollapsedGroups({});
-    } else {
-      const newCollapsed: Record<string, boolean> = {};
+      const newExpanded: Record<string, boolean> = {};
       matrixData.forEach(group => {
-        newCollapsed[group.id] = true;
+        newExpanded[group.id] = true;
       });
-      setCollapsedGroups(newCollapsed);
+      setExpandedGroups(newExpanded);
+    } else {
+      setExpandedGroups({});
     }
   };
 
@@ -1212,15 +1214,15 @@ export const Dashboard = () => {
               </thead>
               <tbody>
                 {matrixData.map(group => {
-                  const isCollapsed = collapsedGroups[group.id];
+                  const isExpanded = !!expandedGroups[group.id];
 
                   return (
                     <Fragment key={group.id}>
                       {/* Parent Group Row */}
-                      <tr className={`${styles.parentRow} ${isCollapsed ? styles.collapsed : ''}`} onClick={() => toggleGroup(group.id)}>
+                      <tr className={`${styles.parentRow} ${!isExpanded ? styles.collapsed : ''}`} onClick={() => toggleGroup(group.id)}>
                         <td className={styles.stickyColumn}>
                           <div className={styles.entityName}>
-                            {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+                            {!isExpanded ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
                             <span>{group.name}</span>
                           </div>
                         </td>
@@ -1235,10 +1237,10 @@ export const Dashboard = () => {
                       </tr>
 
                       {/* Relational Child Rows */}
-                      {!isCollapsed && group.clients.map(client => (
+                      {isExpanded && group.clients.map(client => (
                         <tr key={client.id} className={styles.childRow}>
                           <td className={styles.stickyColumn}>
-                            <span className={styles.childName}>{client.name}</span>
+                            <span className={styles.childName}>{client.legal_name}</span>
                           </td>
                           {matrixColumns.map(col => (
                             <td key={col.id} className={styles.numCell}>

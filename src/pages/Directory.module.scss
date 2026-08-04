@@ -1196,3 +1196,13 @@
     }
   }
 }
+
+.spin {
+  animation: rotation 1.5s linear infinite;
+  display: inline-block;
+}
+
+@keyframes rotation {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

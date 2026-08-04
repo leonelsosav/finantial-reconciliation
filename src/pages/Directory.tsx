@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useDatabase } from '../hooks/useDatabase';
+import { supabase } from '../lib/supabase';
 import type { Client, ClientGroup, InternalCompany, BillingRecord, BankTransaction } from '../types';
 import { 
   Plus, 
@@ -17,7 +18,9 @@ import {
   Trash,
   TrendingUp,
   TrendingDown,
-  Edit2
+  Edit2,
+  Database,
+  Loader2
 } from 'lucide-react';
 import styles from './Directory.module.scss';
 
@@ -72,6 +75,7 @@ export const Directory = () => {
   // UI States
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const [isSeedingData, setIsSeedingData] = useState(false);
   
   // Modals & Drawers States
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
@@ -408,6 +412,317 @@ export const Directory = () => {
     }
   };
 
+  const handleLoadRealCSVData = async () => {
+    const confirmed = window.confirm(
+      '¿Está seguro de cargar los datos reales? Esto eliminará todos los registros de clientes, grupos de clientes, empresas internas, transacciones bancarias y cargas contables existentes para realizar una importación limpia.'
+    );
+    if (!confirmed) return;
+
+    setIsSeedingData(true);
+    try {
+      const commRes = await fetch('/csv/comisiones.csv');
+      const clientsRes = await fetch('/csv/clientes.csv');
+
+      if (!commRes.ok || !clientsRes.ok) {
+        throw new Error('No se pudieron descargar los archivos CSV de comisiones o clientes. Verifique que estén en la carpeta public/csv.');
+      }
+
+      const commBuffer = await commRes.arrayBuffer();
+      const clientsBuffer = await clientsRes.arrayBuffer();
+      const decoder = new TextDecoder('macintosh');
+      const commText = decoder.decode(commBuffer);
+      const clientsText = decoder.decode(clientsBuffer);
+
+      const parseCSV = (text: string): string[][] => {
+        const lines = text.split(/\r?\n/);
+        return lines
+          .map(line => {
+            const cells: string[] = [];
+            let insideQuote = false;
+            let currentCell = '';
+            for (let i = 0; i < line.length; i++) {
+              const char = line[i];
+              if (char === '"') {
+                insideQuote = !insideQuote;
+              } else if (char === ',' && !insideQuote) {
+                cells.push(currentCell);
+                currentCell = '';
+              } else {
+                currentCell += char;
+              }
+            }
+            cells.push(currentCell);
+            return cells;
+          })
+          .filter(row => row.length > 0 && row.some(cell => cell.trim() !== ''));
+      };
+
+      const commRows = parseCSV(commText);
+      const clientsRows = parseCSV(clientsText);
+
+      const commissionsMap: Record<string, number> = {};
+
+      const cleanStr = (str: string): string => {
+        if (!str) return '';
+        return str
+          .toLowerCase()
+          .replace(/[áàâä]/gi, 'a')
+          .replace(/[éèêë]/gi, 'e')
+          .replace(/[íìîï]/gi, 'i')
+          .replace(/[óòôö]/gi, 'o')
+          .replace(/[úùûü]/gi, 'u')
+          .replace(/[ñ]/gi, 'n')
+          .replace(/–/g, 'n')
+          .replace(/„/g, 'n')
+          .replace(/’/g, 'i')
+          .replace(/—/g, 'o')
+          .replace(/œ/g, 'u')
+          .replace(/[.,]/g, '')
+          .trim();
+      };
+
+      for (let i = 1; i < commRows.length; i++) {
+        const row = commRows[i];
+        if (row.length >= 2) {
+          const rawClientName = row[0];
+          const pctStr = row[1].replace('%', '').trim();
+          const pct = parseFloat(pctStr);
+          if (rawClientName && !isNaN(pct)) {
+            commissionsMap[cleanStr(rawClientName)] = pct;
+          }
+        }
+      }
+
+      const getCommissionPercentage = (clientName: string): number => {
+        const cleaned = cleanStr(clientName);
+        if (!cleaned) return 0;
+
+        const manualLookups: Record<string, number> = {
+          'alberto compean': commissionsMap[cleanStr('COPEAN')] ?? 2.0,
+          'compean': commissionsMap[cleanStr('COPEAN')] ?? 2.0,
+          'arq eddy': commissionsMap[cleanStr('EDDY')] ?? 13.0,
+          'arq patatuchi': commissionsMap[cleanStr('PATATUCHI')] ?? 6.0,
+          'edith garcia': commissionsMap[cleanStr('EDITH')] ?? 10.0,
+          'golxer ovigol': commissionsMap[cleanStr('OVIGOL')] ?? 6.0,
+          'manuel nunez avaluo': commissionsMap[cleanStr('MANUEL NUÑEZ')] ?? 6.0,
+          'manuel nunez': commissionsMap[cleanStr('MANUEL NUÑEZ')] ?? 6.0,
+          'fabricio mendoza': commissionsMap[cleanStr('FABRICIO')] ?? 6.0,
+          'lic eduardo borja': commissionsMap[cleanStr('LIC EDUARDO')] ?? 4.5,
+          'lic luis diaz': commissionsMap[cleanStr('LIC LUIS DIAZ')] ?? 4.5,
+          'lic pedro pablo': commissionsMap[cleanStr('LIC PEDRO PABLO')] ?? 4.5,
+          'raul diaz': commissionsMap[cleanStr('RAUL DIRE')] ?? 9.0,
+          'jimena bdia': commissionsMap[cleanStr('JIMENA BUEN DIA')] ?? 7.0,
+          'suegra fabricio': commissionsMap[cleanStr('SUEGRA FABRIZIO')] ?? 6.0,
+          'suegra de fabricio': commissionsMap[cleanStr('FABRICIO')] ?? 6.0,
+          'rafael medrano': commissionsMap[cleanStr('MEDRANO')] ?? 12.0,
+          'rafael sanz': commissionsMap[cleanStr('SACRAMENTO')] ?? 4.0,
+          'neida hna yami': commissionsMap[cleanStr('NEIDA')] ?? 6.0,
+          'lic juan carlos': commissionsMap[cleanStr('JUAN CARLOS')] ?? 6.5,
+          'edmon jesus garcia': commissionsMap[cleanStr('JESUS GARCIA')] ?? 5.0,
+          'edmon': commissionsMap[cleanStr('JESUS GARCIA')] ?? 5.0,
+          'jorge garcia': commissionsMap[cleanStr('JESUS GARCIA')] ?? 5.0,
+        };
+
+        if (manualLookups[cleaned] !== undefined) {
+          return manualLookups[cleaned];
+        }
+
+        if (commissionsMap[cleaned] !== undefined) {
+          return commissionsMap[cleaned];
+        }
+
+        for (const [key, value] of Object.entries(commissionsMap)) {
+          if (cleaned.includes(key) || key.includes(cleaned)) {
+            return value;
+          }
+        }
+
+        return 0;
+      };
+
+      const { error: errBilling } = await supabase.from('billing_records').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      if (errBilling) throw errBilling;
+
+      const { error: errTxs } = await supabase.from('bank_transactions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      if (errTxs) throw errTxs;
+
+      const { error: errClients } = await supabase.from('clients').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      if (errClients) throw errClients;
+
+      const { error: errGroups } = await supabase.from('client_groups').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      if (errGroups) throw errGroups;
+
+      await supabase.from('profiles').update({ internal_company_id: null }).neq('id', '00000000-0000-0000-0000-000000000000');
+
+      const { error: errCompanies } = await supabase.from('internal_companies').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      if (errCompanies) throw errCompanies;
+
+      const uniqueCompaniesMap: Record<string, { name: string; tax_id: string }> = {};
+      for (let i = 1; i < clientsRows.length; i++) {
+        const row = clientsRows[i];
+        if (row.length >= 5) {
+          const empName = row[0].trim();
+          const rfcEmp = row[1] ? row[1].replace('RFC:', '').trim() : '';
+          if (empName && rfcEmp && empName !== 'CANCELADO') {
+            uniqueCompaniesMap[rfcEmp] = { name: empName, tax_id: rfcEmp };
+          }
+        }
+      }
+
+      const insertedCompaniesMap: Record<string, string> = {};
+      for (const comp of Object.values(uniqueCompaniesMap)) {
+        const { data, error } = await supabase
+          .from('internal_companies')
+          .insert({ name: comp.name, tax_id: comp.tax_id })
+          .select('id')
+          .single();
+        if (error) throw error;
+        if (data) {
+          insertedCompaniesMap[comp.tax_id] = data.id;
+        }
+      }
+
+      const getNormalizedClientName = (rfc: string, originalName: string): string => {
+        const cleanedRfc = rfc.trim().toUpperCase();
+        if (cleanedRfc === 'REVP730606BD3') return 'Notaria 94';
+        if (cleanedRfc === 'SACR760704INA') return 'Rafael Sanz';
+        if (cleanedRfc === 'ESI181101FI1') return 'ERF';
+        if (cleanedRfc === 'DCO1704275ZA') return 'Lic. Luis Diaz';
+        return originalName.trim();
+      };
+
+      const getNormalizedGroupName = (name: string): string => {
+        const cleaned = name.trim();
+        const lower = cleaned.toLowerCase();
+        if (lower === 'raul buitron') return 'Raul Buitron';
+        if (lower === 'ramon solis') return 'Ramon Solis';
+        if (lower === 'cadu') return 'CADU';
+        return cleaned;
+      };
+
+      const uniqueGroups = new Set<string>();
+      for (let i = 1; i < clientsRows.length; i++) {
+        const row = clientsRows[i];
+        if (row.length >= 5) {
+          const clientName = row[2].trim();
+          let clientRfc = row[3].trim();
+          if (clientRfc === 'CCO780104EW') clientRfc = 'CCO780104EW1';
+          if (clientRfc === 'FER210219V3') clientRfc = 'FER210219V30';
+
+          if (clientName && clientName !== 'CANCELADO' && clientName !== '') {
+            const correctedName = getNormalizedClientName(clientRfc, clientName);
+            uniqueGroups.add(getNormalizedGroupName(correctedName));
+          }
+        }
+      }
+
+      const insertedGroupsMap: Record<string, string> = {};
+      for (const groupName of uniqueGroups) {
+        const { data, error } = await supabase
+          .from('client_groups')
+          .insert({ group_name: groupName })
+          .select('id')
+          .single();
+        if (error) throw error;
+        if (data) {
+          insertedGroupsMap[groupName] = data.id;
+        }
+      }
+
+      const clientsPayloads: any[] = [];
+      const processedClientKeys = new Set<string>();
+
+      for (let i = 1; i < clientsRows.length; i++) {
+        const row = clientsRows[i];
+        if (row.length >= 5) {
+          const rfcEmp = row[1] ? row[1].replace('RFC:', '').trim() : '';
+          const clientFriendly = row[2].trim();
+          let clientRfc = row[3].trim();
+          let clientRazon = row[4].trim();
+
+          if (!clientFriendly || clientFriendly === 'CANCELADO' || !clientRfc || clientRfc === 'CANCELADO') {
+            continue;
+          }
+
+          // Correct cut-off RFC typos
+          if (clientRfc === 'CCO780104EW') {
+            clientRfc = 'CCO780104EW1';
+          }
+          if (clientRfc === 'FER210219V3') {
+            clientRfc = 'FER210219V30';
+          }
+
+          // Discard incorrect Marketing Digital for RFC CMA160510LU4
+          if (clientRfc === 'CMA160510LU4' && clientRazon === 'MARKETING DIGITAL') {
+            continue;
+          }
+
+          // Format CCO780104EW1 to always have 'SA DE CV'
+          if (clientRfc === 'CCO780104EW1') {
+            clientRazon = 'CHAG CONSTRUCCIONES SA DE CV';
+          }
+
+          const correctedClientName = getNormalizedClientName(clientRfc, clientFriendly);
+          const normalizedGroupName = getNormalizedGroupName(correctedClientName);
+
+          const companyId = insertedCompaniesMap[rfcEmp];
+          const groupId = insertedGroupsMap[normalizedGroupName];
+
+          if (!companyId || !groupId) continue;
+
+          // Unique key: if generic RFC, include clientRazon to preserve public/foreign general clients
+          const key = (clientRfc === 'XAXX010101000' || clientRfc === 'XEXX010101000')
+            ? `${companyId}-${clientRfc}-${clientRazon}`
+            : `${companyId}-${clientRfc}`;
+
+          if (processedClientKeys.has(key)) continue;
+          processedClientKeys.add(key);
+
+          const commPct = getCommissionPercentage(normalizedGroupName);
+
+          clientsPayloads.push({
+            name: normalizedGroupName,
+            internal_company_id: companyId,
+            client_group_id: groupId,
+            commercial_name: normalizedGroupName,
+            legal_name: clientRazon,
+            tax_id: clientRfc,
+            commission_percentage: commPct,
+            retainer_balance: 0.00
+          });
+        }
+      }
+
+      for (let offset = 0; offset < clientsPayloads.length; offset += 50) {
+        const chunk = clientsPayloads.slice(offset, offset + 50);
+        const { error } = await supabase.from('clients').insert(chunk);
+        if (error) throw error;
+      }
+
+      const firstCompanyId = Object.values(insertedCompaniesMap)[0];
+      if (firstCompanyId && profile) {
+        await supabase
+          .from('profiles')
+          .update({ internal_company_id: firstCompanyId })
+          .eq('id', profile.id);
+      }
+
+      alert('Base de datos real cargada exitosamente.');
+
+      fetchGroups();
+      fetchClients();
+      fetchCompanies();
+      fetchBilling();
+      fetchTxs();
+
+    } catch (err: any) {
+      console.error('Error seeding real database:', err);
+      alert('Error al cargar la base de datos real: ' + err.message);
+    } finally {
+      setIsSeedingData(false);
+    }
+  };
+
   // Access Wall Guard
   if (!isOwner) {
     return (
@@ -448,23 +763,38 @@ export const Directory = () => {
           </p>
         </div>
 
-        {activeTab === 'clients' ? (
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           <button 
             className={styles.primaryActionBtn} 
-            onClick={() => setIsGroupModalOpen(true)}
+            onClick={handleLoadRealCSVData}
+            disabled={isSeedingData}
+            style={{ 
+              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', 
+              boxShadow: '0 4px 6px -1px rgba(16, 185, 129, 0.2)' 
+            }}
           >
-            <Plus size={16} />
-            <span>Crear Grupo Cliente</span>
+            {isSeedingData ? <Loader2 className={styles.spin} size={16} /> : <Database size={16} />}
+            <span>{isSeedingData ? 'Cargando...' : 'Cargar DB Real (CSV)'}</span>
           </button>
-        ) : (
-          <button 
-            className={styles.primaryActionBtn} 
-            onClick={handleOpenAddCompany}
-          >
-            <Plus size={16} />
-            <span>Registrar Empresa Interna</span>
-          </button>
-        )}
+
+          {activeTab === 'clients' ? (
+            <button 
+              className={styles.primaryActionBtn} 
+              onClick={() => setIsGroupModalOpen(true)}
+            >
+              <Plus size={16} />
+              <span>Crear Grupo Cliente</span>
+            </button>
+          ) : (
+            <button 
+              className={styles.primaryActionBtn} 
+              onClick={handleOpenAddCompany}
+            >
+              <Plus size={16} />
+              <span>Registrar Empresa Interna</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Navigation Tab Bar */}
