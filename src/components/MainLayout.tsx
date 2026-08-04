@@ -31,8 +31,8 @@ export const MainLayout = () => {
             <Building2 size={18} />
           </div>
           <div>
-            <h1 className={styles.logoTitle}>Única Fuente</h1>
-            <p className={styles.logoSub}>Fuente de Verdad</p>
+            <h1 className={styles.logoTitle}>Karpi</h1>
+            <p className={styles.logoSub}>Karpi Finanzas</p>
           </div>
         </div>
 
