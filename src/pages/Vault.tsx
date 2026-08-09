@@ -614,7 +614,7 @@ export const Vault = () => {
       setUploadProgress(Math.round((parsedCount / totalFiles) * 100));
     }
 
-    if (parsedInvoices.length === 0) {
+    if (parsedInvoices.length === 0 && successCount === 0) {
       setIngestionLogs(tempLogs);
       showAlert('error', 'Error de Ingestión', 'No se pudo extraer ninguna factura válida de los archivos cargados. Revise el panel de reporte para ver los errores.');
       setIsUploading(false);
@@ -705,7 +705,13 @@ export const Vault = () => {
       setIngestionLogs(tempLogs);
 
       let message = `Ingestión finalizada.\n`;
-      message += `- Cargadas con éxito: ${uniqueParsedInvoices.length} facturas\n`;
+      if (uniqueParsedInvoices.length > 0) {
+        message += `- Cargadas con éxito: ${uniqueParsedInvoices.length} facturas\n`;
+      }
+      const cancelUpdatesCount = tempLogs.filter(l => l.message.includes('cancelada con éxito')).length;
+      if (cancelUpdatesCount > 0) {
+        message += `- Facturas existentes marcadas como canceladas: ${cancelUpdatesCount}\n`;
+      }
       if (duplicatesCount > 0) {
         message += `- Omitidas por duplicadas: ${duplicatesCount}\n`;
       }
