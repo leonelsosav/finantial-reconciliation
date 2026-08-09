@@ -409,76 +409,198 @@ export const Vault = () => {
 
         const clientObj = clients.find(c => c.id === clientId);
         const commissionPercent = clientObj?.commission_percentage || 0;
-        const amountCommission = total * (commissionPercent / 100);
-        const amountNetPayroll = total - amountCommission;
 
         const isCanceledPath = (file.webkitRelativePath || '').toLowerCase().includes('cancelado');
         const isCanceledName = (file.name || '').toLowerCase().includes('cancelado');
         const isCanceled = isCanceledPath || isCanceledName;
 
-        if (isCanceled) {
-          // Check if invoice exists in the database by invoice_uuid
-          const { data: existingRecord, error: getErr } = await supabase
-            .from('billing_records')
-            .select('id, is_reconciled, bank_transaction_id')
-            .eq('invoice_uuid', uuid)
-            .maybeSingle();
+        const tipoComprobante = comprobanteEl.getAttribute('TipoDeComprobante') || '';
 
-          if (getErr) throw getErr;
+        if (tipoComprobante === 'P') {
+          // Check if this REP itself is already canceled in DB or is being loaded as canceled
+          if (isCanceled) {
+            const { data: existingRecord, error: getErr } = await supabase
+              .from('billing_records')
+              .select('id, is_reconciled, bank_transaction_id')
+              .eq('invoice_uuid', uuid)
+              .maybeSingle();
 
-          if (existingRecord) {
-            // If it is reconciled, unlink the bank transaction first
-            if (existingRecord.is_reconciled && existingRecord.bank_transaction_id) {
-              const { error: bankErr } = await supabase
-                .from('bank_transactions')
-                .update({ is_reconciled: false })
-                .eq('id', existingRecord.bank_transaction_id);
-              if (bankErr) throw bankErr;
+            if (getErr) throw getErr;
+
+            if (existingRecord) {
+              if (existingRecord.is_reconciled && existingRecord.bank_transaction_id) {
+                const { error: bankErr } = await supabase
+                  .from('bank_transactions')
+                  .update({ is_reconciled: false })
+                  .eq('id', existingRecord.bank_transaction_id);
+                if (bankErr) throw bankErr;
+              }
+
+              const { error: updateErr } = await supabase
+                .from('billing_records')
+                .update({ 
+                  is_canceled: true, 
+                  is_reconciled: false, 
+                  bank_transaction_id: null 
+                })
+                .eq('id', existingRecord.id);
+              
+              if (updateErr) throw updateErr;
+
+              tempLogs.push({
+                filename: file.name,
+                type: 'warning',
+                message: `REP cancelado con éxito (existente en BD).`,
+                uuid: uuid,
+                amount: 0,
+                timestamp: new Date().toLocaleTimeString()
+              });
+              successCount++;
+              continue;
+            }
+          }
+
+          // Parse payment nodes (wildcard matching to handle different namespaces for pagos10 and pagos20)
+          const pagoNodes = xmlDoc.getElementsByTagNameNS('*', 'Pago');
+          const paymentsToInsert: { amount: number; parentUuid: string | null; parcialidad: string | null; opDate: string }[] = [];
+
+          for (let p = 0; p < pagoNodes.length; p++) {
+            const pagoNode = pagoNodes[p];
+            const monto = Number(pagoNode.getAttribute('Monto') || 0);
+            const fechaPago = pagoNode.getAttribute('FechaPago') || operationDate;
+            const opDate = fechaPago.split('T')[0] || operationDate;
+
+            const docRelNodes = pagoNode.getElementsByTagNameNS('*', 'DoctoRelacionado');
+            if (docRelNodes.length > 0) {
+              for (let d = 0; d < docRelNodes.length; d++) {
+                const docRelNode = docRelNodes[d];
+                const idDocumento = docRelNode.getAttribute('IdDocumento') || '';
+                const impPagadoAttr = docRelNode.getAttribute('ImpPagado');
+                const impPagado = impPagadoAttr ? Number(impPagadoAttr) : (monto / docRelNodes.length);
+                const numParcialidad = docRelNode.getAttribute('NumParcialidad') || '1';
+
+                paymentsToInsert.push({
+                  amount: impPagado,
+                  parentUuid: idDocumento,
+                  parcialidad: numParcialidad,
+                  opDate: opDate
+                });
+              }
+            } else {
+              paymentsToInsert.push({
+                amount: monto,
+                parentUuid: null,
+                parcialidad: null,
+                opDate: opDate
+              });
+            }
+          }
+
+          if (paymentsToInsert.length === 0) {
+            throw new Error('No se encontraron transacciones de pago válidas en el XML del REP.');
+          }
+
+          for (const pay of paymentsToInsert) {
+            const amountGross = pay.amount;
+            const amountCommission = amountGross * (commissionPercent / 100);
+            const amountNetPayroll = amountGross - amountCommission;
+
+            let payDesc = `Pago (Parcialidad ${pay.parcialidad || 1})`;
+            if (pay.parentUuid) {
+              payDesc += ` de Factura: ${pay.parentUuid}`;
+            }
+            if (isIntercompany) {
+              payDesc += ` (Intercompañía)`;
             }
 
-            // Update the existing invoice to be canceled and unreconciled
-            const { error: updateErr } = await supabase
-              .from('billing_records')
-              .update({ 
-                is_canceled: true, 
-                is_reconciled: false, 
-                bank_transaction_id: null 
-              })
-              .eq('id', existingRecord.id);
-            
-            if (updateErr) throw updateErr;
-
-            tempLogs.push({
-              filename: file.name,
-              type: 'warning',
-              message: `Factura cancelada con éxito (existente en BD).`,
-              uuid: uuid,
-              amount: total,
-              timestamp: new Date().toLocaleTimeString()
+            parsedInvoices.push({
+              client_id: clientId,
+              internal_company_id: internalCompanyId,
+              invoice_uuid: uuid, // Shared REP UUID
+              is_invoiced: true,
+              virtual_bucket_label: pay.parentUuid || null,
+              amount_gross: amountGross,
+              amount_commission: amountCommission,
+              amount_net_payroll: amountNetPayroll,
+              entry_type: 'payroll_funding',
+              description: payDesc,
+              operation_date: pay.opDate,
+              is_reconciled: false,
+              is_canceled: isCanceled,
+              imported_by: profile?.id || null
             });
-            successCount++;
-            continue; // Skip adding to parsedInvoices since we already updated it
           }
+
+          successCount++;
+        } else {
+          // Standard Invoice processing (Ingreso, Egreso, Traslado, etc.)
+          const amountCommission = total * (commissionPercent / 100);
+          const amountNetPayroll = total - amountCommission;
+
+          if (isCanceled) {
+            // Check if invoice exists in the database by invoice_uuid
+            const { data: existingRecord, error: getErr } = await supabase
+              .from('billing_records')
+              .select('id, is_reconciled, bank_transaction_id')
+              .eq('invoice_uuid', uuid)
+              .maybeSingle();
+
+            if (getErr) throw getErr;
+
+            if (existingRecord) {
+              // If it is reconciled, unlink the bank transaction first
+              if (existingRecord.is_reconciled && existingRecord.bank_transaction_id) {
+                const { error: bankErr } = await supabase
+                  .from('bank_transactions')
+                  .update({ is_reconciled: false })
+                  .eq('id', existingRecord.bank_transaction_id);
+                if (bankErr) throw bankErr;
+              }
+
+              // Update the existing invoice to be canceled and unreconciled
+              const { error: updateErr } = await supabase
+                .from('billing_records')
+                .update({ 
+                  is_canceled: true, 
+                  is_reconciled: false, 
+                  bank_transaction_id: null 
+                })
+                .eq('id', existingRecord.id);
+              
+              if (updateErr) throw updateErr;
+
+              tempLogs.push({
+                filename: file.name,
+                type: 'warning',
+                message: `Factura cancelada con éxito (existente en BD).`,
+                uuid: uuid,
+                amount: total,
+                timestamp: new Date().toLocaleTimeString()
+              });
+              successCount++;
+              continue; // Skip adding to parsedInvoices since we already updated it
+            }
+          }
+
+          parsedInvoices.push({
+            client_id: clientId,
+            internal_company_id: internalCompanyId,
+            invoice_uuid: uuid,
+            is_invoiced: true,
+            virtual_bucket_label: null,
+            amount_gross: total,
+            amount_commission: amountCommission,
+            amount_net_payroll: amountNetPayroll,
+            entry_type: 'payroll_funding',
+            description: isIntercompany ? `${batchName} (Intercompañía)` : batchName,
+            operation_date: operationDate,
+            is_reconciled: false,
+            is_canceled: isCanceled,
+            imported_by: profile?.id || null
+          });
+
+          successCount++;
         }
-
-        parsedInvoices.push({
-          client_id: clientId,
-          internal_company_id: internalCompanyId,
-          invoice_uuid: uuid,
-          is_invoiced: true,
-          virtual_bucket_label: null,
-          amount_gross: total,
-          amount_commission: amountCommission,
-          amount_net_payroll: amountNetPayroll,
-          entry_type: 'payroll_funding',
-          description: isIntercompany ? `${batchName} (Intercompañía)` : batchName, // Save batch label in description for grouping
-          operation_date: operationDate,
-          is_reconciled: false,
-          is_canceled: isCanceled,
-          imported_by: profile?.id || null
-        });
-
-        successCount++;
       } catch (err: any) {
         console.error(`Error al procesar archivo ${file.name}:`, err);
         tempLogs.push({
