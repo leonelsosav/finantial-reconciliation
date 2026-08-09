@@ -39,7 +39,15 @@ export const Dashboard = () => {
   const { data: companies, fetchData: fetchCompanies } = useDatabase<InternalCompany>('internal_companies');
   const { updateRecord } = useDatabase<Client>('clients');
 
-  const [timeframe, setTimeframe] = useState<'30days' | '7days' | '90days' | 'currentMonth' | 'all'>('30days');
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    // Default to the current month in local YYYY-MM format
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    return `${year}-${month}`;
+  });
+  const [retainerInjections, setRetainerInjections] = useState<BillingRecord[]>([]);
+
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [showExplainers, setShowExplainers] = useState<boolean>(false);
   const [reconciliationModal, setReconciliationModal] = useState<{
@@ -59,31 +67,96 @@ export const Dashboard = () => {
 
   const isLoading = loadingBilling || loadingTxs || loadingClients || loadingGroups;
 
-  // Fetch initial data
+  // Derive date bounds for the selected YYYY-MM month
+  const dateRange = useMemo(() => {
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const startStr = `${year}-${String(month).padStart(2, '0')}-01`;
+    const lastDay = new Date(year, month, 0).getDate();
+    const endStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    return { startStr, endStr };
+  }, [selectedMonth]);
+
+  // Generate selection list for the last 24 months
+  const monthOptions = useMemo(() => {
+    const options = [];
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+
+    for (let i = 0; i < 24; i++) {
+      const d = new Date(currentYear, currentMonth - i, 1);
+      const year = d.getFullYear();
+      const monthNum = d.getMonth() + 1;
+      const val = `${year}-${String(monthNum).padStart(2, '0')}`;
+      
+      const label = d.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+      const capitalizedLabel = label.charAt(0).toUpperCase() + label.slice(1);
+      
+      options.push({ value: val, label: capitalizedLabel });
+    }
+    return options;
+  }, []);
+
+  // Fetch billing records within selected month's range
   useEffect(() => {
     if (!isOwner) return;
 
     const billingOptions: any = {
       select: '*, clients(name)',
-      sort: { column: 'operation_date', direction: 'desc' }
+      sort: { column: 'operation_date', direction: 'desc' },
+      filters: [
+        { column: 'operation_date', operator: 'gte', value: dateRange.startStr },
+        { column: 'operation_date', operator: 'lte', value: dateRange.endStr }
+      ]
     };
     if (selectedCompanyId) {
-      billingOptions.filters = [{ column: 'internal_company_id', operator: 'eq', value: selectedCompanyId }];
+      billingOptions.filters.push({ column: 'internal_company_id', operator: 'eq', value: selectedCompanyId });
     }
     fetchBilling(billingOptions);
-  }, [selectedCompanyId, fetchBilling, isOwner]);
+  }, [selectedCompanyId, fetchBilling, isOwner, dateRange]);
 
+  // Fetch bank transactions within selected month's range
   useEffect(() => {
     if (!isOwner) return;
 
     const txOptions: any = {
-      sort: { column: 'transaction_date', direction: 'desc' }
+      sort: { column: 'transaction_date', direction: 'desc' },
+      filters: [
+        { column: 'transaction_date', operator: 'gte', value: dateRange.startStr },
+        { column: 'transaction_date', operator: 'lte', value: dateRange.endStr }
+      ]
     };
     if (selectedCompanyId) {
-      txOptions.filters = [{ column: 'internal_company_id', operator: 'eq', value: selectedCompanyId }];
+      txOptions.filters.push({ column: 'internal_company_id', operator: 'eq', value: selectedCompanyId });
     }
     fetchTxs(txOptions);
-  }, [selectedCompanyId, fetchTxs, isOwner]);
+  }, [selectedCompanyId, fetchTxs, isOwner, dateRange]);
+
+  // Fetch all historical retainer injections for cumulative escrow cushion balance
+  useEffect(() => {
+    if (!isOwner) return;
+
+    const fetchAllRetainers = async () => {
+      try {
+        let query = supabase
+          .from('billing_records')
+          .select('*, clients(name)')
+          .eq('entry_type', 'retainer_injection');
+
+        if (selectedCompanyId) {
+          query = query.eq('internal_company_id', selectedCompanyId);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+        setRetainerInjections(data || []);
+      } catch (err) {
+        console.error('Error fetching historical retainer injections:', err);
+      }
+    };
+
+    fetchAllRetainers();
+  }, [selectedCompanyId, isOwner]);
 
   useEffect(() => {
     if (!isOwner) return;
@@ -111,50 +184,26 @@ export const Dashboard = () => {
   // Timeframe date boundary helper
   const todayStr = useMemo(() => DateEngine.getLocalYYYYMMDD(new Date()), []);
 
-  // Filtered lists reactive to timeframe
+  // Filtered lists are bounded strictly by month queries
   const filteredBillingRecords = useMemo(() => {
-    if (timeframe === 'all') {
-      return billingRecords.filter(r => !r.is_canceled);
-    }
-    const startDate = new Date();
-    if (timeframe === '7days') {
-      startDate.setDate(startDate.getDate() - 6);
-    } else if (timeframe === '30days') {
-      startDate.setDate(startDate.getDate() - 29);
-    } else if (timeframe === '90days') {
-      startDate.setDate(startDate.getDate() - 89);
-    } else if (timeframe === 'currentMonth') {
-      startDate.setDate(1);
-    }
-    const startStr = DateEngine.getLocalYYYYMMDD(startDate);
-    return billingRecords.filter(r => r.operation_date >= startStr && r.operation_date <= todayStr && !r.is_canceled);
-  }, [billingRecords, timeframe, todayStr]);
+    return billingRecords.filter(r => !r.is_canceled);
+  }, [billingRecords]);
 
   const filteredBankTxs = useMemo(() => {
-    if (timeframe === 'all') {
-      return bankTxs;
-    }
-    const startDate = new Date();
-    if (timeframe === '7days') {
-      startDate.setDate(startDate.getDate() - 6);
-    } else if (timeframe === '30days') {
-      startDate.setDate(startDate.getDate() - 29);
-    } else if (timeframe === '90days') {
-      startDate.setDate(startDate.getDate() - 89);
-    } else if (timeframe === 'currentMonth') {
-      startDate.setDate(1);
-    }
-    const startStr = DateEngine.getLocalYYYYMMDD(startDate);
-    return bankTxs.filter(tx => tx.transaction_date >= startStr && tx.transaction_date <= todayStr);
-  }, [bankTxs, timeframe, todayStr]);
+    return bankTxs;
+  }, [bankTxs]);
 
-  // Dynamic client provisions: Calculate balance based on reconciled billing records in the DB.
-  // If there are no reconciled billing records at all in the database, all client balances default to 0.00.
-  // Otherwise, a client's balance is the sum of the gross amount of their reconciled billing records of type 'retainer_injection' (safety cushion).
-  // Pass-through payroll funding records are excluded as they are disbursed to employees.
+  // Dynamic client provisions: Calculate balance based on merged historical + current month retainer injections.
   const processedClients = useMemo(() => {
     return clients.map(client => {
-      const clientRecords = billingRecords.filter(br => br.client_id === client.id);
+      const allMergedRecords = [...billingRecords];
+      retainerInjections.forEach(r => {
+        if (!allMergedRecords.some(x => x.id === r.id)) {
+          allMergedRecords.push(r);
+        }
+      });
+
+      const clientRecords = allMergedRecords.filter(br => br.client_id === client.id);
       const dynamicBalance = clientRecords.reduce((sum, r) =>
         (r.is_reconciled && r.entry_type === 'retainer_injection' && !r.is_canceled) ? sum + Number(r.amount_gross || 0) : sum, 0
       );
@@ -163,7 +212,7 @@ export const Dashboard = () => {
         retainer_balance: dynamicBalance
       };
     });
-  }, [clients, billingRecords]);
+  }, [clients, billingRecords, retainerInjections]);
 
   // Aggregate stats using financials hook
   const {
@@ -192,28 +241,15 @@ export const Dashboard = () => {
     return Math.max(0, consolidatedTreasury - activeEscrow);
   }, [consolidatedTreasury, activeEscrow]);
 
-  // Chart timeline builder: Outflow vs Inflow (30D Timeline)
+  // Chart timeline builder: Outflow vs Inflow (Selected Month Timeline)
   const chartDays = useMemo(() => {
-    const today = new Date();
     const grouped: Record<string, { inflow: number; outflow: number }> = {};
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const lastDayNum = new Date(year, month, 0).getDate();
 
-    const startDate = new Date();
-    if (timeframe === '7days') {
-      startDate.setDate(today.getDate() - 6);
-    } else if (timeframe === '30days') {
-      startDate.setDate(today.getDate() - 29);
-    } else if (timeframe === '90days' || timeframe === 'all') {
-      startDate.setDate(today.getDate() - 89);
-    } else if (timeframe === 'currentMonth') {
-      startDate.setDate(1);
-    }
-
-    const startDateStr = DateEngine.getLocalYYYYMMDD(startDate);
     // Filter only client operation transactions
     const clientOpsTxs = bankTxs.filter(tx =>
-      tx.transaction_category === 'client_operation' &&
-      tx.transaction_date >= startDateStr &&
-      tx.transaction_date <= todayStr
+      tx.transaction_category === 'client_operation'
     );
 
     clientOpsTxs.forEach(tx => {
@@ -232,47 +268,16 @@ export const Dashboard = () => {
     const result: { day: string; inflow: number; outflow: number; active?: boolean }[] = [];
     const options: Intl.DateTimeFormatOptions = { month: 'short', day: '2-digit' };
 
-    let stepDays = 1;
-    let daysToLoop = 30;
-
-    if (timeframe === '7days') {
-      stepDays = 1;
-      daysToLoop = 7;
-    } else if (timeframe === '30days') {
-      stepDays = 3;
-      daysToLoop = 30;
-    } else if (timeframe === '90days' || timeframe === 'all') {
-      stepDays = 9;
-      daysToLoop = 90;
-    } else if (timeframe === 'currentMonth') {
-      stepDays = Math.max(Math.ceil(today.getDate() / 10), 1);
-      daysToLoop = today.getDate();
-    }
-
-    for (let i = 0; i < daysToLoop; i += stepDays) {
-      const dateObj = new Date(startDate);
-      dateObj.setDate(startDate.getDate() + i);
+    for (let day = 1; day <= lastDayNum; day++) {
+      const dateObj = new Date(year, month - 1, day);
       const dateStr = DateEngine.getLocalYYYYMMDD(dateObj);
-
-      let inflowSum = 0;
-      let outflowSum = 0;
-
-      for (let k = 0; k < stepDays; k++) {
-        const subDate = new Date(dateObj);
-        subDate.setDate(dateObj.getDate() + k);
-        const subDateStr = DateEngine.getLocalYYYYMMDD(subDate);
-        const dataForDay = grouped[subDateStr];
-        if (dataForDay) {
-          inflowSum += dataForDay.inflow;
-          outflowSum += dataForDay.outflow;
-        }
-      }
-
+      const dataForDay = grouped[dateStr] || { inflow: 0, outflow: 0 };
       const isToday = dateStr === todayStr;
+
       result.push({
         day: isToday ? 'Hoy' : dateObj.toLocaleDateString('es-MX', options),
-        inflow: inflowSum,
-        outflow: outflowSum,
+        inflow: dataForDay.inflow,
+        outflow: dataForDay.outflow,
         active: isToday
       });
     }
@@ -283,7 +288,7 @@ export const Dashboard = () => {
       inflowPct: Math.min((r.inflow / maxVal) * 90, 90),
       outflowPct: Math.min((r.outflow / maxVal) * 90, 90)
     }));
-  }, [bankTxs, timeframe, todayStr]);
+  }, [bankTxs, selectedMonth, todayStr]);
 
   // Billing Matrix columns
   const matrixColumns = useMemo(() => {
@@ -996,6 +1001,17 @@ export const Dashboard = () => {
           </h1>
         </div>
         <div className={styles.headerActions}>
+          <select
+            className={styles.monthSelect}
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+          >
+            {monthOptions.map(opt => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
           <button className={styles.loadBtn} onClick={handleLoadDemoData}>
             Cargar Datos de Demo
           </button>
@@ -1101,17 +1117,6 @@ export const Dashboard = () => {
                 <span className={`${styles.legendDot} ${styles.dotSuccess}`}></span>
                 <span>Débitos (Salidas)</span>
               </div>
-              <select
-                className={styles.chartSelect}
-                value={timeframe}
-                onChange={(e) => setTimeframe(e.target.value as any)}
-              >
-                <option value="7days">Últimos 7 Días</option>
-                <option value="30days">Últimos 30 Días</option>
-                <option value="90days">Últimos 90 Días</option>
-                <option value="currentMonth">Mes Actual</option>
-                <option value="all">Mostrar Todo</option>
-              </select>
             </div>
           </div>
 
