@@ -17,7 +17,7 @@ export const useFinancials = (
 
     // 2. True Net Corporate Utility: Total revenue earned from commission percentages on reconciled billing records
     const netUtility = billingRecords.reduce(
-      (sum, br) => br.is_reconciled ? sum + Number(br.amount_commission || 0) : sum,
+      (sum, br) => (br.is_reconciled && !br.is_canceled) ? sum + Number(br.amount_commission || 0) : sum,
       0
     );
 
@@ -28,7 +28,7 @@ export const useFinancials = (
     );
 
     // Unreconciled counts for indicators
-    const unreconciledInvoicesCount = billingRecords.filter(br => !br.is_reconciled).length;
+    const unreconciledInvoicesCount = billingRecords.filter(br => !br.is_reconciled && !br.is_canceled).length;
     const unreconciledBankTxsCount = bankTransactions.filter(tx => !tx.is_reconciled).length;
 
     return {

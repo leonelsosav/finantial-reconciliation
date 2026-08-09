@@ -93,7 +93,7 @@ export const Reconciliation = () => {
         } else {
           // Look for close matching billing record (same client/reference or close amount)
           const closeAmountRecord = billingRecords.find(bill => 
-            Math.abs(Math.abs(Number(bill.amount_gross)) - Math.abs(Number(tx.amount))) < 50
+            !bill.is_canceled && Math.abs(Math.abs(Number(bill.amount_gross)) - Math.abs(Number(tx.amount))) < 50
           );
           if (closeAmountRecord && Math.abs(Number(closeAmountRecord.amount_gross)) !== Math.abs(Number(tx.amount))) {
             exceptionType = 'Amount Mismatch';
@@ -433,7 +433,7 @@ export const Reconciliation = () => {
                     className={styles.invoiceSelect}
                   >
                     <option value="">Seleccionar Factura...</option>
-                    {billingRecords.map(bill => {
+                    {billingRecords.filter(bill => !bill.is_canceled).map(bill => {
                       const client = clients.find(c => c.id === bill.client_id);
                       return (
                         <option key={bill.id} value={bill.id}>

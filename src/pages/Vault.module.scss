@@ -1504,4 +1504,16 @@
   }
 }
 
+.canceledBadge {
+  font-size: 8px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  letter-spacing: 0.02em;
+  background-color: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid rgba(185, 28, 28, 0.2);
+  text-transform: uppercase;
+}
+
 

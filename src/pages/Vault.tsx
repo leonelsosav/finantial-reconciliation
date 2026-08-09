@@ -412,6 +412,55 @@ export const Vault = () => {
         const amountCommission = total * (commissionPercent / 100);
         const amountNetPayroll = total - amountCommission;
 
+        const isCanceledPath = (file.webkitRelativePath || '').toLowerCase().includes('cancelado');
+        const isCanceledName = (file.name || '').toLowerCase().includes('cancelado');
+        const isCanceled = isCanceledPath || isCanceledName;
+
+        if (isCanceled) {
+          // Check if invoice exists in the database by invoice_uuid
+          const { data: existingRecord, error: getErr } = await supabase
+            .from('billing_records')
+            .select('id, is_reconciled, bank_transaction_id')
+            .eq('invoice_uuid', uuid)
+            .maybeSingle();
+
+          if (getErr) throw getErr;
+
+          if (existingRecord) {
+            // If it is reconciled, unlink the bank transaction first
+            if (existingRecord.is_reconciled && existingRecord.bank_transaction_id) {
+              const { error: bankErr } = await supabase
+                .from('bank_transactions')
+                .update({ is_reconciled: false })
+                .eq('id', existingRecord.bank_transaction_id);
+              if (bankErr) throw bankErr;
+            }
+
+            // Update the existing invoice to be canceled and unreconciled
+            const { error: updateErr } = await supabase
+              .from('billing_records')
+              .update({ 
+                is_canceled: true, 
+                is_reconciled: false, 
+                bank_transaction_id: null 
+              })
+              .eq('id', existingRecord.id);
+            
+            if (updateErr) throw updateErr;
+
+            tempLogs.push({
+              filename: file.name,
+              type: 'warning',
+              message: `Factura cancelada con éxito (existente en BD).`,
+              uuid: uuid,
+              amount: total,
+              timestamp: new Date().toLocaleTimeString()
+            });
+            successCount++;
+            continue; // Skip adding to parsedInvoices since we already updated it
+          }
+        }
+
         parsedInvoices.push({
           client_id: clientId,
           internal_company_id: internalCompanyId,
@@ -425,6 +474,7 @@ export const Vault = () => {
           description: isIntercompany ? `${batchName} (Intercompañía)` : batchName, // Save batch label in description for grouping
           operation_date: operationDate,
           is_reconciled: false,
+          is_canceled: isCanceled,
           imported_by: profile?.id || null
         });
 
@@ -499,8 +549,8 @@ export const Vault = () => {
         } else {
           tempLogs.push({
             filename: fileName,
-            type: 'success',
-            message: 'Cargada con éxito.',
+            type: inv.is_canceled ? 'warning' : 'success',
+            message: inv.is_canceled ? 'Registrada como cancelada (nueva en BD).' : 'Cargada con éxito.',
             uuid: inv.invoice_uuid,
             amount: inv.amount_gross,
             timestamp: new Date().toLocaleTimeString()
@@ -1031,7 +1081,10 @@ export const Vault = () => {
                       return (
                         <tr key={record.id}>
                           <td className={styles.uuidCell} title={record.invoice_uuid || 'Sin UUID'}>
-                            {record.invoice_uuid ? `${record.invoice_uuid.slice(0, 8)}...${record.invoice_uuid.slice(-6)}` : 'S/N'}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span>{record.invoice_uuid ? `${record.invoice_uuid.slice(0, 8)}...${record.invoice_uuid.slice(-6)}` : 'S/N'}</span>
+                              {record.is_canceled && <span className={styles.canceledBadge}>Cancelada</span>}
+                            </div>
                           </td>
                           <td className={styles.clientCell} title={recordClientName}>
                             <div className={styles.tableClientGroup}>

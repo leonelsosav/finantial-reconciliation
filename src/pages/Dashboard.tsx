@@ -39,7 +39,7 @@ export const Dashboard = () => {
   const { data: companies, fetchData: fetchCompanies } = useDatabase<InternalCompany>('internal_companies');
   const { updateRecord } = useDatabase<Client>('clients');
 
-  const [timeframe, setTimeframe] = useState<'30days' | '7days' | '90days' | 'currentMonth'>('30days');
+  const [timeframe, setTimeframe] = useState<'30days' | '7days' | '90days' | 'currentMonth' | 'all'>('30days');
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [showExplainers, setShowExplainers] = useState<boolean>(false);
   const [reconciliationModal, setReconciliationModal] = useState<{
@@ -113,6 +113,9 @@ export const Dashboard = () => {
 
   // Filtered lists reactive to timeframe
   const filteredBillingRecords = useMemo(() => {
+    if (timeframe === 'all') {
+      return billingRecords.filter(r => !r.is_canceled);
+    }
     const startDate = new Date();
     if (timeframe === '7days') {
       startDate.setDate(startDate.getDate() - 6);
@@ -124,10 +127,13 @@ export const Dashboard = () => {
       startDate.setDate(1);
     }
     const startStr = DateEngine.getLocalYYYYMMDD(startDate);
-    return billingRecords.filter(r => r.operation_date >= startStr && r.operation_date <= todayStr);
+    return billingRecords.filter(r => r.operation_date >= startStr && r.operation_date <= todayStr && !r.is_canceled);
   }, [billingRecords, timeframe, todayStr]);
 
   const filteredBankTxs = useMemo(() => {
+    if (timeframe === 'all') {
+      return bankTxs;
+    }
     const startDate = new Date();
     if (timeframe === '7days') {
       startDate.setDate(startDate.getDate() - 6);
@@ -150,7 +156,7 @@ export const Dashboard = () => {
     return clients.map(client => {
       const clientRecords = billingRecords.filter(br => br.client_id === client.id);
       const dynamicBalance = clientRecords.reduce((sum, r) =>
-        (r.is_reconciled && r.entry_type === 'retainer_injection') ? sum + Number(r.amount_gross || 0) : sum, 0
+        (r.is_reconciled && r.entry_type === 'retainer_injection' && !r.is_canceled) ? sum + Number(r.amount_gross || 0) : sum, 0
       );
       return {
         ...client,
@@ -196,7 +202,7 @@ export const Dashboard = () => {
       startDate.setDate(today.getDate() - 6);
     } else if (timeframe === '30days') {
       startDate.setDate(today.getDate() - 29);
-    } else if (timeframe === '90days') {
+    } else if (timeframe === '90days' || timeframe === 'all') {
       startDate.setDate(today.getDate() - 89);
     } else if (timeframe === 'currentMonth') {
       startDate.setDate(1);
@@ -235,7 +241,7 @@ export const Dashboard = () => {
     } else if (timeframe === '30days') {
       stepDays = 3;
       daysToLoop = 30;
-    } else if (timeframe === '90days') {
+    } else if (timeframe === '90days' || timeframe === 'all') {
       stepDays = 9;
       daysToLoop = 90;
     } else if (timeframe === 'currentMonth') {
@@ -1104,6 +1110,7 @@ export const Dashboard = () => {
                 <option value="30days">Últimos 30 Días</option>
                 <option value="90days">Últimos 90 Días</option>
                 <option value="currentMonth">Mes Actual</option>
+                <option value="all">Mostrar Todo</option>
               </select>
             </div>
           </div>

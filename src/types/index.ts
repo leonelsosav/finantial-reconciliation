@@ -55,6 +55,7 @@ export interface BillingRecord {
   is_reconciled: boolean;
   bank_transaction_id: string | null;
   imported_by: string | null;
+  is_canceled?: boolean;
   created_at: string;
   // Joined data
   clients?: {
