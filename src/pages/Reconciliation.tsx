@@ -435,9 +435,18 @@ export const Reconciliation = () => {
                     <option value="">Seleccionar Factura...</option>
                     {billingRecords.filter(bill => !bill.is_canceled).map(bill => {
                       const client = clients.find(c => c.id === bill.client_id);
+                      let displayLabel = '';
+
+                      if (bill.virtual_bucket_label && bill.virtual_bucket_label.includes(':')) {
+                        const [parentUuid, numParcialidad] = bill.virtual_bucket_label.split(':');
+                        displayLabel = `PAGO: Parcialidad ${numParcialidad} de Factura: ${parentUuid.slice(0, 8)}...${parentUuid.slice(-6)} - Gross: ${formatCurrency(Number(bill.amount_gross))} (${client?.name || 'Cliente desconocido'})`;
+                      } else {
+                        displayLabel = `FACTURA: ${bill.invoice_uuid || 'XML-S/N'} - Gross: ${formatCurrency(Number(bill.amount_gross))} (${client?.name || 'Cliente desconocido'})`;
+                      }
+
                       return (
                         <option key={bill.id} value={bill.id}>
-                          {bill.invoice_uuid || 'XML-S/N'} - Gross: {formatCurrency(Number(bill.amount_gross))} ({client?.name || 'Cliente desconocido'})
+                          {displayLabel}
                         </option>
                       );
                     })}

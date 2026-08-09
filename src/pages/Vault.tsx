@@ -5,6 +5,7 @@ import { useDatabase } from '../hooks/useDatabase';
 import { supabase } from '../lib/supabase';
 import { DateEngine } from '../utils/DateEngine';
 import { ModalAlert } from '../components/ModalAlert';
+import { ReconciliationService } from '../services/reconciliation.service';
 import type { BillingRecord, Client, InternalCompany } from '../types';
 import { 
   CloudUpload, 
@@ -246,8 +247,14 @@ export const Vault = () => {
     }
   };
 
+  const handleCanceledInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      await processUploadedFiles(e.target.files, true);
+    }
+  };
+
   // Processing routine for multiple files / folder
-  const processUploadedFiles = async (filesList: FileList | File[]) => {
+  const processUploadedFiles = async (filesList: FileList | File[], forceCanceled: boolean = false) => {
     if (clients.length === 0 || companies.length === 0) {
       showAlert('info', 'Cargando Catálogos', 'Esperando que se carguen las entidades autorizadas. Intente de nuevo en unos segundos.');
       return;
@@ -412,7 +419,7 @@ export const Vault = () => {
 
         const isCanceledPath = (file.webkitRelativePath || '').toLowerCase().includes('cancelado');
         const isCanceledName = (file.name || '').toLowerCase().includes('cancelado');
-        const isCanceled = isCanceledPath || isCanceledName;
+        const isCanceled = forceCanceled || isCanceledPath || isCanceledName;
 
         const tipoComprobante = comprobanteEl.getAttribute('TipoDeComprobante') || '';
 
@@ -505,25 +512,17 @@ export const Vault = () => {
             const amountCommission = amountGross * (commissionPercent / 100);
             const amountNetPayroll = amountGross - amountCommission;
 
-            let payDesc = `Pago (Parcialidad ${pay.parcialidad || 1})`;
-            if (pay.parentUuid) {
-              payDesc += ` de Factura: ${pay.parentUuid}`;
-            }
-            if (isIntercompany) {
-              payDesc += ` (Intercompañía)`;
-            }
-
             parsedInvoices.push({
               client_id: clientId,
               internal_company_id: internalCompanyId,
               invoice_uuid: uuid, // Shared REP UUID
               is_invoiced: true,
-              virtual_bucket_label: pay.parentUuid || null,
+              virtual_bucket_label: pay.parentUuid ? `${pay.parentUuid}:${pay.parcialidad || 1}` : null,
               amount_gross: amountGross,
               amount_commission: amountCommission,
               amount_net_payroll: amountNetPayroll,
               entry_type: 'payroll_funding',
-              description: payDesc,
+              description: isIntercompany ? `${batchName} (Intercompañía)` : batchName,
               operation_date: pay.opDate,
               is_reconciled: false,
               is_canceled: isCanceled,
@@ -651,8 +650,25 @@ export const Vault = () => {
 
       if (uniqueParsedInvoices.length > 0) {
         setActiveUploadFile(`Guardando ${uniqueParsedInvoices.length} facturas nuevas...`);
-        const { error: insertError } = await supabase.from('billing_records').insert(uniqueParsedInvoices);
+        const { data: insertedRows, error: insertError } = await supabase
+          .from('billing_records')
+          .insert(uniqueParsedInvoices)
+          .select('id');
+
         if (insertError) throw insertError;
+
+        if (insertedRows && insertedRows.length > 0) {
+          Promise.all(
+            insertedRows.map(row =>
+              ReconciliationService.processReconciliationEvent(row.id, 'billing_record')
+                .catch(err => console.error(`Failed auto-reconciliation for bill ${row.id}:`, err))
+            )
+          ).then(() => {
+            fetchBilling({
+              sort: { column: 'created_at', direction: 'desc' }
+            });
+          });
+        }
       }
 
       // Build report log objects
@@ -669,10 +685,16 @@ export const Vault = () => {
             timestamp: new Date().toLocaleTimeString()
           });
         } else {
+          let successMessage = 'Cargada con éxito.';
+          if (inv.virtual_bucket_label && inv.virtual_bucket_label.includes(':')) {
+            const [parentUuid, numParcialidad] = inv.virtual_bucket_label.split(':');
+            successMessage = `Pago (Parcialidad ${numParcialidad}) de Factura: ${parentUuid.slice(0, 8)}...${parentUuid.slice(-6)}`;
+          }
+
           tempLogs.push({
             filename: fileName,
             type: inv.is_canceled ? 'warning' : 'success',
-            message: inv.is_canceled ? 'Registrada como cancelada (nueva en BD).' : 'Cargada con éxito.',
+            message: inv.is_canceled ? 'Registrada como cancelada (nueva en BD).' : successMessage,
             uuid: inv.invoice_uuid,
             amount: inv.amount_gross,
             timestamp: new Date().toLocaleTimeString()
@@ -844,19 +866,33 @@ export const Vault = () => {
                   }}
                   onChange={handleFolderInput}
                 />
+                <input 
+                  type="file" 
+                  id="canceled-upload-input"
+                  className={styles.fileInput} 
+                  multiple
+                  onChange={handleCanceledInput}
+                />
                 <div className={styles.uploadIconCircle}>
                   <CloudUpload size={32} />
                 </div>
                 <p className={styles.dropTextPrimary}>Arrastre carpetas XML aquí</p>
                 <p className={styles.dropTextSecondary}>Carga automática de carpetas de facturación (CFDI)</p>
                 
-                <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '12px' }}>
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '12px', flexWrap: 'wrap' }}>
                   <button 
                     type="button" 
                     className={styles.folderBtn}
                     onClick={() => document.getElementById('folder-upload-input')?.click()}
                   >
                     Seleccionar Carpeta
+                  </button>
+                  <button 
+                    type="button" 
+                    className={`${styles.folderBtn} ${styles.canceledBtn}`}
+                    onClick={() => document.getElementById('canceled-upload-input')?.click()}
+                  >
+                    Cargar Canceladas (XMLs)
                   </button>
                   <button 
                     type="button" 
@@ -1200,18 +1236,52 @@ export const Vault = () => {
                     {selectedGroup.records.map(record => {
                       const recordClient = clients.find(c => c.id === record.client_id);
                       const recordClientName = recordClient?.commercial_name || recordClient?.name || 'Cliente';
+
+                      let isRepSplit = false;
+                      let parentUuid = '';
+                      let numParcialidad = '';
+                      let fatherInvoiceExists = false;
+                      let fatherInvoiceAmount = 0;
+
+                      if (record.virtual_bucket_label && record.virtual_bucket_label.includes(':')) {
+                        const parts = record.virtual_bucket_label.split(':');
+                        parentUuid = parts[0];
+                        numParcialidad = parts[1] || '1';
+                        isRepSplit = true;
+
+                        const fatherInv = billingRecords.find(
+                          b => b.invoice_uuid?.toLowerCase() === parentUuid.toLowerCase()
+                        );
+                        if (fatherInv) {
+                          fatherInvoiceExists = true;
+                          fatherInvoiceAmount = fatherInv.amount_gross;
+                        }
+                      }
+
                       return (
                         <tr key={record.id}>
                           <td className={styles.uuidCell} title={record.invoice_uuid || 'Sin UUID'}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span>{record.invoice_uuid ? `${record.invoice_uuid.slice(0, 8)}...${record.invoice_uuid.slice(-6)}` : 'S/N'}</span>
-                              {record.is_canceled && <span className={styles.canceledBadge}>Cancelada</span>}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span>{record.invoice_uuid ? `${record.invoice_uuid.slice(0, 8)}...${record.invoice_uuid.slice(-6)}` : 'S/N'}</span>
+                                {record.is_canceled && <span className={styles.canceledBadge}>Cancelada</span>}
+                              </div>
+                              {isRepSplit && (
+                                <div className={`${styles.fatherBadge} ${fatherInvoiceExists ? styles.fatherFound : styles.fatherNotFound}`}>
+                                  Parcialidad {numParcialidad} - {fatherInvoiceExists ? `Vinc: $${fatherInvoiceAmount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}` : 'No encontrada'}
+                                </div>
+                              )}
                             </div>
                           </td>
                           <td className={styles.clientCell} title={recordClientName}>
                             <div className={styles.tableClientGroup}>
                               <span className={styles.tableClientName}>{recordClientName}</span>
-                              {recordClient?.legal_name && (
+                              {isRepSplit && (
+                                <span className={styles.fatherInvoiceSub} title={parentUuid}>
+                                  Factura Padre: {parentUuid.slice(0, 8)}...{parentUuid.slice(-6)}
+                                </span>
+                              )}
+                              {!isRepSplit && recordClient?.legal_name && (
                                 <span className={styles.tableClientSub}>{recordClient.legal_name}</span>
                               )}
                             </div>
