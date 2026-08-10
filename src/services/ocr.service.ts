@@ -1,4 +1,4 @@
-import { createWorker } from 'tesseract.js';
+import { createWorker, PSM } from 'tesseract.js';
 import { PredictionService } from './prediction.service';
 
 export interface OcrParsedTransaction {
@@ -11,7 +11,7 @@ export interface OcrParsedTransaction {
   client_id: string;
 }
 
-type BankType = 'BBVA' | 'Banorte' | 'Inbursa' | 'STP' | 'Convenia';
+export type BankType = 'BBVA' | 'Banorte' | 'Inbursa' | 'STP' | 'Convenia';
 
 interface RawTx {
   date: string;
@@ -23,93 +23,75 @@ interface RawTx {
 
 // ── Utilities ──────────────────────────────────────────────────────────────
 
-function detectBank(text: string): BankType | null {
-  const t = text.toUpperCase();
+// Matches Mexican-peso amounts tolerantly: the "$" is frequently dropped by
+// OCR on low-resolution screenshots, and the decimal point is sometimes
+// misread as another separator (comma or hyphen). parseMXN() below is what
+// actually makes sense of whichever separators survive.
+// The trailing (?!:) rejects HH:MM-style time fragments (e.g. a mangled
+// "...2026.10:28" timestamp) that would otherwise look exactly like money
+// once "$" is optional — a real peso amount is never followed by a colon.
+const MONEY_SRC = '\\$?\\s*((?:\\d{1,3}(?:[,.]\\d{3})+|\\d+)[.,\\-]\\d{2})(?!:)(?![0-9])';
+const moneyRe = (flags = '') => new RegExp(MONEY_SRC, flags);
 
-  // Primary logo text (may be missed if rendered as image)
-  if (t.includes('BBVA')) return 'BBVA';
-  if (t.includes('BANORTE') || t.includes('BANCO MERCANTIL DEL NORTE')) return 'Banorte';
-  if (t.includes('INBURSA') || t.includes('BANCA EN LINEA EMPRESARIAL')) return 'Inbursa';
-  if (t.includes('STP') || t.includes('SISTEMA DE TRANSFERENCIAS')) return 'STP';
-  if (t.includes('CONVENIA')) return 'Convenia';
-
-  // Fallback: page layout fingerprints unique to each bank
-  // BBVA: distinctive page title + SPEI sender codes
-  if (
-    t.includes('CUENTA CON') ||
-    t.includes('SIN CHEQUERA') ||
-    t.includes('RECIBIDOBANAMEX') ||
-    t.includes('RECIBIDOBBVA') ||
-    (t.includes('CONCEPTO') && t.includes('REFERENCIA') && t.includes('ABONO') && t.includes('CARGO'))
-  ) return 'BBVA';
-
-  // Banorte: unique column headers
-  if (
-    t.includes('CUENTAS DE CHEQUES') ||
-    t.includes('DESCRIPCION DETALLADA') ||
-    t.includes('COD.TRANSAC') ||
-    t.includes('RFC: BMN')
-  ) return 'Banorte';
-
-  // Inbursa: unique column headers and section labels
-  if (
-    t.includes('CLAVE DE RASTREO') ||
-    t.includes('MOVIMIENTOS POR CUENTA') ||
-    t.includes('CAUSA DE DEVOLUCION') ||
-    t.includes('ORDENANTE') ||
-    t.includes('NO. REFERENCIA')
-  ) return 'Inbursa';
-
-  return null;
-}
-
-function parseMXN(str: string): number {
-  return parseFloat(str.replace(/[$,\s]/g, '')) || 0;
+// Strips everything but digits and treats the final two as cents, so it
+// doesn't matter whether OCR rendered the amount as "9,923.50", "15.500.00"
+// (period used as thousands separator) or "21,297-60" (decimal point
+// misread as a hyphen) — all three normalize to the correct peso value.
+function parseMXN(raw: string): number {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length === 0) return 0;
+  if (digits.length <= 2) return parseFloat(digits) || 0;
+  return parseFloat(`${digits.slice(0, -2)}.${digits.slice(-2)}`) || 0;
 }
 
 // ── BBVA Parser ────────────────────────────────────────────────────────────
 // Columns: Día | Concepto / Referencia | Cargo | Abono | Saldo
-// The page header shows the full date, e.g., "09/07/2026".
-// Each transaction row starts with a 1–2 digit day number.
 // A row has EITHER a Cargo (debit) OR an Abono (credit), never both.
 // Debit keywords: ENVIADO, RETIRO, PAGO DE NOMINA
 // Credit keywords: RECIBIDO, ABONO
+// This crop of the statement never shows a month/year anywhere (only the
+// bare "Día" column), so month/year fall back to the current date.
+// OCR's line ordering within a row isn't reliable — the "Día" digit can land
+// either before or after the wrapped Concepto text — so blocks are anchored
+// on the one thing that's stable: the "SPEI RECIBIDO/ENVIADO" text itself.
 
 function parseBBVA(text: string): RawTx[] {
   const results: RawTx[] = [];
 
-  // Extract header month/year from first date in the document
   const headerDateM = text.match(/\b(\d{1,2})\/(\d{2})\/(\d{4})\b/);
-  const month = headerDateM?.[2] ?? '01';
-  const year  = headerDateM?.[3] ?? '2024';
+  const today = new Date();
+  const month = headerDateM?.[2] ?? String(today.getMonth() + 1).padStart(2, '0');
+  const year  = headerDateM?.[3] ?? String(today.getFullYear());
 
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
 
-  // Group lines into transaction blocks.
-  // A new block starts when a line begins with a day number (1–31)
-  // followed immediately by a SPEI/ATM/RETIRO/PAGO/TRANSFERENCIA keyword.
-  const blocks: { day: string; text: string }[] = [];
-  let cur: { day: string; text: string } | null = null;
+  // Group lines into transaction blocks. A new block starts on any line
+  // containing "SPEI RECIBIDO"/"SPEI ENVIADO".
+  const blocks: string[] = [];
+  let cur: string | null = null;
 
   for (const line of lines) {
-    const m = line.match(/^(\d{1,2})\s+(SPEI|ATM|RETIRO|PAGO|TRANSF|CARGO|DEPOSITO|ABONO)/i);
-    if (m && parseInt(m[1]) >= 1 && parseInt(m[1]) <= 31) {
+    if (/SPEI\s+(RECIBIDO|ENVIADO)/i.test(line)) {
       if (cur) blocks.push(cur);
-      cur = { day: m[1].padStart(2, '0'), text: line };
+      cur = line;
     } else if (cur) {
-      cur.text += ' ' + line;
+      cur += ' ' + line;
     }
   }
   if (cur) blocks.push(cur);
 
-  for (const { day, text: blockText } of blocks) {
-    const amounts = [...blockText.matchAll(/\$\s*([\d,]+\.\d{2})/g)].map(m => parseMXN(m[1]));
+  for (const blockText of blocks) {
+    const amounts = [...blockText.matchAll(moneyRe('g'))].map(m => parseMXN(m[1]));
     if (amounts.length === 0) continue;
 
     const txAmount = amounts[0]; // first amount = transaction; second (if any) = running saldo
 
-    // Description: everything before the first '$', strip leading day number
-    const description = blockText.split('$')[0].replace(/^\d{1,2}\s*/, '').trim().replace(/\s+/g, ' ');
+    // Description: strip all dollar amounts (Cargo/Abono/Saldo), keeping
+    // any concept text that OCR placed around them.
+    const description = blockText
+      .replace(moneyRe('g'), '')
+      .replace(/\s+/g, ' ')
+      .trim();
 
     const isDebit = /ENVIADO|RETIRO|PAGO\s+DE\s+NOMINA/i.test(description);
     const amount  = isDebit ? -txAmount : txAmount;
@@ -117,6 +99,11 @@ function parseBBVA(text: string): RawTx[] {
     // Reference: slash-separated SPEI codes, e.g. "BANAMEX/0130637377"
     const refM = description.match(/([A-Z]+\/\d+)/i);
     const reference = refM?.[0] ?? '';
+
+    // Día column value: a 1–2 digit number immediately followed by the long
+    // numeric tail of the SPEI tracking code (e.g. "09 0090726SERVICIO...").
+    const dayM = blockText.match(/\b(\d{1,2})\s+\d{6,8}\D/);
+    const day = (dayM?.[1] ?? String(today.getDate())).padStart(2, '0');
 
     results.push({
       date: `${day}/${month}/${year}`,
@@ -134,55 +121,63 @@ function parseBBVA(text: string): RawTx[] {
 // Columns: CUENTA | FECHA DE OPERACION | FECHA | REFERENCIA | DESCRIPCION |
 //          COD.TRANSAC | SUCURSAL | DEPOSITOS | RETIROS | SALDO |
 //          MOVIMIENTO | DESCRIPCION DETALLADA
-// Deposit rows:    "$22,000.00  -  $22,275.19"  → DEPOSITOS=$22k, RETIROS=0
-// Withdrawal rows: "-  $X,XXX.XX  $X,XXX.XX"   → DEPOSITOS=0,  RETIROS=$X
+// DEPOSITOS/RETIROS are mutually exclusive per row, like BBVA's Cargo/Abono.
+// The RETIROS placeholder "-" for a deposit row is read inconsistently by
+// OCR (sometimes present, sometimes dropped entirely), so it isn't a
+// reliable sign signal, so direction is read from "SPEI RECIBIDO"/"SPEI
+// ENVIADO" in DESCRIPCION DETALLADA instead — the same wording BBVA and
+// Inbursa already use for the same purpose.
+// OCR can also read the wrapped DESCRIPCION DETALLADA text before the
+// numeric row instead of after it, so rows are grouped by contiguous
+// non-header, non-summary lines rather than a fixed "next line" lookahead.
 
 function parseBanorte(text: string): RawTx[] {
   const results: RawTx[] = [];
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const rawLines = text.split('\n').map(l => l.trim()).filter(Boolean);
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+  const isHeaderOrSummary = (l: string) =>
+    l.includes('|') || /^(?:DEP[ÓO]SITOS|OPERACIONES|TOTAL)\b/i.test(l);
 
-    const dateM = line.match(/\b(\d{2}\/\d{2}\/\d{4})\b/);
-    if (!dateM) continue;
-
-    // Skip header rows that have no amounts
-    if (/^(?:FECHA|CUENTA|DEPOSITOS|RETIROS|SALDO)\b/i.test(line) && !/\$/.test(line)) continue;
-
-    const date = dateM[1];
-    const combined = line + ' ' + (lines[i + 1] ?? '');
-
-    // Detect deposit: "$AMOUNT -" pattern (RETIROS column is a dash)
-    const depositM = combined.match(/\$\s*([\d,]+\.\d{2})\s+[-–]\s+/);
-    // Detect withdrawal: "- $AMOUNT" or "- $0.00" pattern
-    const retiroM  = combined.match(/[-–]\s+\$([\d,]+\.\d{2})/);
-
-    let amount: number;
-    let lowConfidence = false;
-
-    if (depositM) {
-      amount = parseMXN(depositM[1]);
+  const blocks: string[] = [];
+  let cur: string[] = [];
+  for (const line of rawLines) {
+    if (isHeaderOrSummary(line)) {
+      if (cur.length) blocks.push(cur.join(' '));
+      cur = [];
     } else {
-      // Extract first dollar amount, then use keywords to determine sign
-      const firstM = combined.match(/\$\s*([\d,]+\.\d{2})/);
-      if (!firstM) continue;
-      amount = parseMXN(firstM[1]);
-      if (/RETIRO|ENVIADO|NOMINA|CARGO/i.test(combined)) amount = -amount;
-      else if (!retiroM) lowConfidence = true;
+      cur.push(line);
     }
+  }
+  if (cur.length) blocks.push(cur.join(' '));
 
-    // Prefer DESCRIPCION DETALLADA (the SPEI block at the end of the row)
-    const speiM = combined.match(/SPEI\s+RECIBIDO[^$\d]*/i);
+  for (const combined of blocks) {
+    const dateM = combined.match(/\b(\d{2}\/\d{2}\/\d{4})\b/);
+    if (!dateM) continue;
+    const date = dateM[1];
+
+    const amounts = [...combined.matchAll(moneyRe('g'))].map(m => parseMXN(m[1]));
+    if (amounts.length === 0) continue;
+
+    // First dollar figure in the row is always DEPOSITOS or RETIROS
+    // (whichever is populated); the second is SALDO.
+    const isCredit = /SPEI\s+RECIBIDO/i.test(combined);
+    const isDebit = /SPEI\s+ENVIADO/i.test(combined);
+    const amount = isDebit ? -Math.abs(amounts[0]) : Math.abs(amounts[0]);
+
+    // Prefer DESCRIPCION DETALLADA (the SPEI block within the row)
+    const speiM = combined.match(/SPEI\s+(?:RECIBIDO|ENVIADO)[^$]*/i);
     const description = speiM
       ? speiM[0].trim().replace(/\s+/g, ' ').substring(0, 100)
-      : combined.replace(/\$[\d,]+\.\d{2}/g, '').replace(/\s+/g, ' ').substring(0, 80);
+      : combined.replace(moneyRe('g'), '').replace(/\s+/g, ' ').substring(0, 80);
 
-    // REFERENCIA column: long numeric string before the amounts
-    const refM = line.match(/\b(\d{8,})\b/);
-    const reference = refM?.[1] ?? '';
+    // Prefer the CVE RAST / clave de rastreo (long alphanumeric token from
+    // DESCRIPCION DETALLADA, e.g. "036INBU09072026284693567") over the plain
+    // REFERENCIA column, which is frequently all zeros and not unique.
+    const claveM = combined.match(/\b([A-Z0-9]{15,})\b/);
+    const refM = combined.match(/\b(\d{8,})\b/);
+    const reference = claveM?.[1] ?? refM?.[1] ?? '';
 
-    results.push({ date, description, reference, amount, lowConfidence });
+    results.push({ date, description, reference, amount, lowConfidence: !isCredit && !isDebit });
   }
 
   return results;
@@ -206,10 +201,18 @@ function parseInbursa(text: string): RawTx[] {
     if (/SALDO\s+INICIAL/i.test(line)) continue;
 
     const date = dateM[1];
-    // Combine up to 2 following lines to capture Ordenante / Clave de Rastreo
-    const combined = [line, lines[i + 1] ?? '', lines[i + 2] ?? ''].join(' ');
+    // Combine up to 2 following lines to capture Ordenante / Clave de Rastreo —
+    // but stop at the next row's date line. Rows aren't reliably separated by
+    // a blank line once empty lines are filtered out, so without this bound
+    // the window can swallow the next transaction's Clave de Rastreo too.
+    const windowLines = [line];
+    for (let j = i + 1; j <= i + 2 && j < lines.length; j++) {
+      if (/^\d{2}\/\d{2}\/\d{4}/.test(lines[j])) break;
+      windowLines.push(lines[j]);
+    }
+    const combined = windowLines.join(' ');
 
-    const allAmounts = [...combined.matchAll(/\$([\d,]+\.\d{2})/g)].map(m => parseMXN(m[1]));
+    const allAmounts = [...combined.matchAll(moneyRe('g'))].map(m => parseMXN(m[1]));
     if (allAmounts.length === 0) continue;
 
     const isCredit = /DEPOSITO\s+SPEI|TRANSFERENCIA\s+RECIBIDA/i.test(combined);
@@ -246,46 +249,128 @@ function parseInbursa(text: string): RawTx[] {
 }
 
 // ── STP Parser ─────────────────────────────────────────────────────────────
+// Columns: Fecha | Tipo | Estatus | Tipo de pago | Referencia | Concepto |
+//          Monto | Comisión | Depósito final | Movimiento en la cuenta | Saldo | Comprobante
+// Fecha uses Spanish month names + time, e.g. "Julio 31, 2026. 14:52".
+// Tipo is an explicit "Retiro" / "Abono" label — the only reliable sign signal.
+// Concepto is free text (e.g. "PAGO", "PAGO ADMIN INMUEBLE...") and must NOT be
+// used to infer direction: it can read "PAGO" on a credit (Abono) row too.
+
+const SPANISH_MONTHS: Record<string, string> = {
+  enero: '01', febrero: '02', marzo: '03', abril: '04', mayo: '05', junio: '06',
+  julio: '07', agosto: '08', septiembre: '09', octubre: '10', noviembre: '11', diciembre: '12',
+};
+
+// The leading character of the "Fecha" column is often clipped by OCR (e.g.
+// "Julio" reads as "ulio"), since it sits right at the screenshot's edge —
+// so the first letter of each month name is matched optionally.
+const STP_DATE_RE = new RegExp(
+  `\\b(${Object.keys(SPANISH_MONTHS).map(m => `${m[0]}?${m.slice(1)}`).join('|')})\\s+(\\d{1,2}),?\\s*(\\d{4})`,
+  'i'
+);
+
+function resolveSpanishMonth(raw: string): string | undefined {
+  const lower = raw.toLowerCase();
+  if (SPANISH_MONTHS[lower]) return SPANISH_MONTHS[lower];
+  const key = Object.keys(SPANISH_MONTHS).find(m => m.endsWith(lower));
+  return key ? SPANISH_MONTHS[key] : undefined;
+}
+
+function parseSTPAmount(raw: string): number {
+  let s = raw.replace(/[\$\£\€\¥\s]/g, '');
+  
+  // Look for thousands separator followed by exactly 3 digits (e.g. 6,072000 or 16.168 80)
+  const thousandsM = s.match(/([.,])(\d{3})/);
+  if (thousandsM) {
+    const separator = thousandsM[1];
+    const sepIndex = s.indexOf(separator);
+    const afterSeparator = s.substring(sepIndex + 1);
+    const beforeDigits = s.substring(0, sepIndex).replace(/\D/g, '');
+    const afterDigits = afterSeparator.replace(/\D/g, '');
+    
+    const mainPart = beforeDigits + afterDigits.substring(0, 3);
+    let centsPart = afterDigits.substring(3);
+    if (!centsPart) centsPart = '00';
+    if (centsPart.length > 2) centsPart = centsPart.substring(0, 2);
+    
+    return parseFloat(`${mainPart}.${centsPart}`) || 0;
+  }
+  
+  return parseMXN(s);
+}
+
 function parseSTP(text: string): RawTx[] {
   const results: RawTx[] = [];
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+  const today = new Date();
+  
+  // Pre-scan document to locate a valid month name and year (default to current month/year)
+  let detectedMonth = String(today.getMonth() + 1).padStart(2, '0');
+  let detectedYear = String(today.getFullYear());
+  
+  const allDateMatches = [...text.matchAll(new RegExp(STP_DATE_RE.source, 'gi'))];
+  for (const m of allDateMatches) {
+    const resolved = resolveSpanishMonth(m[1]);
+    if (resolved) {
+      detectedMonth = resolved;
+      const yr = m[3];
+      detectedYear = (yr.startsWith('20') || yr === '2026') ? '2026' : yr;
+      break;
+    }
+  }
 
-    const dateM = line.match(/\b(\d{2}\/\d{2}\/\d{4}|\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4})\b/);
-    if (!dateM) continue;
+  for (const line of lines) {
+    const isRetiro = /\bRETIRO\b/i.test(line);
+    const isAbono = /\bABONO\b/i.test(line);
+    if ((!isRetiro && !isAbono) || !/SPEI/i.test(line)) continue;
 
-    const date = dateM[1];
-    const combined = [line, lines[i + 1] ?? '', lines[i + 2] ?? ''].join(' ');
+    // Extract day number from the start of the line (first 20 chars)
+    const dayM = line.substring(0, 20).match(/\b(\d{1,2})\b/);
+    const day = dayM ? dayM[1].padStart(2, '0') : String(today.getDate()).padStart(2, '0');
+    const date = `${day}/${detectedMonth}/${detectedYear}`;
 
-    const amounts = [...combined.matchAll(/\$?\s*([\d,]+\.\d{2})/g)].map(m => parseMXN(m[1]));
-    if (amounts.length === 0) continue;
-
-    let amount = amounts[0];
-    
-    const isDebit = /RETIRO|EGRESO|CARGO|PAGO|ENVIADO|ENVIO|-[–\s]*\$/i.test(combined);
-    if (isDebit) {
-      amount = -Math.abs(amount);
+    // Extract reference number following SPEI keyword
+    const speiM = line.match(/SPEI\s+(\$?[A-Z0-9/]+)/i);
+    let reference = '';
+    let suffixStart = 0;
+    if (speiM) {
+      reference = speiM[1].replace('$', '');
+      suffixStart = line.indexOf(speiM[0]) + speiM[0].length;
     } else {
-      amount = Math.abs(amount);
+      const fallbackRef = line.match(/SPEI\s+(\d+)/i);
+      reference = fallbackRef?.[1] ?? '';
+      suffixStart = fallbackRef ? line.indexOf(fallbackRef[0]) + fallbackRef[0].length : 0;
     }
 
-    const refM = combined.match(/\b([A-Z0-9]{15,30})\b/);
-    const reference = refM?.[1] ?? '';
+    const suffix = suffixStart > 0 ? line.substring(suffixStart) : line;
 
-    const descM = combined.match(/(?:CONCEPTO|DESCRIPCION|MOTIVO|REFERENCIA):\s*([^$]*)/i);
-    let description = descM?.[1]?.trim() || '';
-    if (!description) {
-      description = combined.replace(/\$[\d,]+\.\d{2}/g, '').replace(date, '').replace(reference, '').trim().substring(0, 80);
-    }
+    // Suffix starts after reference; locate first currency symbol
+    const currencyIdx = suffix.search(/[\$\£\€\¥]/);
+    if (currencyIdx === -1) continue;
+
+    const slicedFromCurrency = suffix.substring(currencyIdx);
+
+    // Extract the primary transaction amount (starts at this currency symbol)
+    const amountM = slicedFromCurrency.match(/^[\$\£\€\¥]\s*([\d,.\-\s]+)/);
+    if (!amountM) continue;
+
+    const amountVal = parseSTPAmount(amountM[1]);
+    const amount = isRetiro ? -Math.abs(amountVal) : Math.abs(amountVal);
+
+    const conceptText = suffix.substring(0, currencyIdx).trim();
+    const description = conceptText
+      .replace(/\b(PACS|PEA|SPEI)\b/gi, '')
+      .trim()
+      .replace(/\s+/g, ' ')
+      .substring(0, 100) || 'Transferencia STP';
 
     results.push({
       date,
-      description: description.replace(/\s+/g, ' ').substring(0, 100) || 'Transferencia STP',
+      description,
       reference,
       amount,
-      lowConfidence: !refM,
+      lowConfidence: !reference || !dayM,
     });
   }
 
@@ -306,7 +391,7 @@ function parseConvenia(text: string): RawTx[] {
     const date = dateM[1];
     const combined = [line, lines[i + 1] ?? '', lines[i + 2] ?? ''].join(' ');
 
-    const amounts = [...combined.matchAll(/\$?\s*([\d,]+\.\d{2})/g)].map(m => parseMXN(m[1]));
+    const amounts = [...combined.matchAll(moneyRe('g'))].map(m => parseMXN(m[1]));
     if (amounts.length === 0) continue;
 
     let amount = amounts[0];
@@ -322,7 +407,7 @@ function parseConvenia(text: string): RawTx[] {
     const descM = combined.match(/(?:CONCEPTO|DESCRIPCION|PAGO|NOMINA|DISPERSION):\s*([^$]*)/i);
     let description = descM?.[1]?.trim() || '';
     if (!description) {
-      description = combined.replace(/\$[\d,]+\.\d{2}/g, '').replace(date, '').replace(reference, '').trim().substring(0, 80);
+      description = combined.replace(moneyRe('g'), '').replace(date, '').replace(reference, '').trim().substring(0, 80);
     }
 
     results.push({
@@ -337,6 +422,46 @@ function parseConvenia(text: string): RawTx[] {
   return results;
 }
 
+// ── Image preprocessing ───────────────────────────────────────────────────
+// Bank-portal screenshots are frequently small crops (a few hundred px
+// tall). Tesseract reads those very unreliably at native resolution — this
+// is the main source of missed/garbled transactions, not the parsing
+// regexes. Upscaling before recognition dramatically improves accuracy.
+
+const TARGET_LONG_EDGE = 3600;
+const MAX_UPSCALE = 5;
+
+async function upscaleForOcr(file: File): Promise<HTMLCanvasElement> {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error('No se pudo cargar la imagen para procesarla.'));
+      image.src = objectUrl;
+    });
+
+    const longEdge = Math.max(img.naturalWidth, img.naturalHeight);
+    const scale = Math.min(MAX_UPSCALE, Math.max(1, TARGET_LONG_EDGE / longEdge));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.naturalWidth * scale);
+    canvas.height = Math.round(img.naturalHeight * scale);
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('No se pudo preparar la imagen para OCR.');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    // Grayscale + high contrast native filters make text significantly more readable for Tesseract
+    ctx.filter = 'grayscale(100%) contrast(150%)';
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+    return canvas;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 // ── Main Service ───────────────────────────────────────────────────────────
 
 export const OcrService = {
@@ -346,6 +471,15 @@ export const OcrService = {
     selectedBank?: string
   ): Promise<OcrParsedTransaction[]> {
     onProgress?.(5);
+
+    if (!selectedBank || !['BBVA', 'Banorte', 'Inbursa', 'STP', 'Convenia'].includes(selectedBank)) {
+      throw new Error('Banco no soportado o no seleccionado.');
+    }
+
+    const resolvedBank = selectedBank as BankType;
+
+    const preprocessed = await upscaleForOcr(file);
+    onProgress?.(8);
 
     const worker = await createWorker('spa', 1, {
       logger: (m: { status: string; progress: number }) => {
@@ -358,25 +492,19 @@ export const OcrService = {
 
     let rawText: string;
     try {
-      const { data } = await worker.recognize(file);
+      // Automatic page-segmentation is unstable across image sizes for
+      // these table layouts (the same screenshot can go from cleanly
+      // readable to garbled a few hundred px apart); forcing "single
+      // column of variable-sized text" is far more consistent.
+      await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_COLUMN });
+      const { data } = await worker.recognize(preprocessed);
       rawText = data.text;
+      console.log('[OcrService] Raw text:', rawText);
     } finally {
       await worker.terminate();
     }
 
     onProgress?.(85);
-
-    const resolvedBank = (selectedBank && ['BBVA', 'Banorte', 'Inbursa', 'STP', 'Convenia'].includes(selectedBank))
-      ? (selectedBank as BankType)
-      : detectBank(rawText);
-
-    if (!resolvedBank) {
-      const preview = rawText.replace(/\s+/g, ' ').substring(0, 300);
-      console.warn('[OcrService] Could not detect bank. OCR preview:', preview);
-      throw new Error(
-        'No se pudo identificar el banco. Asegúrese de que la captura sea de BBVA, Banorte, STP, Convenia o Inbursa.'
-      );
-    }
 
     const rawTxs: RawTx[] =
       resolvedBank === 'BBVA'     ? parseBBVA(rawText) :
@@ -387,7 +515,7 @@ export const OcrService = {
 
     if (rawTxs.length === 0) {
       throw new Error(
-        `Se detectó ${resolvedBank} pero no se encontraron transacciones. Verifique que la captura muestre la tabla de movimientos.`
+        `No se encontraron transacciones para ${resolvedBank} en la imagen. Verifique que la captura muestre la tabla de movimientos.`
       );
     }
 

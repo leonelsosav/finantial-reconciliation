@@ -32,3 +32,6 @@ functionality/
 files/
 CLAUDE.md
 .firebase
+test_ocr.html
+test_parse_locally.js
+test_stp_ocr.js

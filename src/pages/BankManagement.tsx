@@ -7,6 +7,7 @@ import { DateEngine } from '../utils/DateEngine';
 import { ModalAlert } from '../components/ModalAlert';
 import type { BankTransaction, InternalCompany, Client } from '../types';
 import { OcrService } from '../services/ocr.service';
+import type { BankType } from '../services/ocr.service';
 import { ReconciliationService } from '../services/reconciliation.service';
 import { 
   Lock, 
@@ -47,7 +48,7 @@ export const BankManagement = () => {
 
   // Account / Company filter context
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
-  const [selectedBank, setSelectedBank] = useState<string>('Banorte');
+  const [selectedBank, setSelectedBank] = useState<BankType>('Banorte');
 
   // OCR/Screenshot states
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -395,7 +396,7 @@ export const BankManagement = () => {
           <div className={styles.selectWrapper}>
             <select 
               value={selectedBank} 
-              onChange={e => setSelectedBank(e.target.value)}
+              onChange={e => setSelectedBank(e.target.value as BankType)}
               className={styles.bankSelect}
             >
               <option value="Banorte">Banorte</option>
