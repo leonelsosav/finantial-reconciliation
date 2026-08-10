@@ -11,7 +11,7 @@ export interface OcrParsedTransaction {
   client_id: string;
 }
 
-type BankType = 'BBVA' | 'Banorte' | 'Inbursa';
+type BankType = 'BBVA' | 'Banorte' | 'Inbursa' | 'STP' | 'Convenia';
 
 interface RawTx {
   date: string;
@@ -30,6 +30,8 @@ function detectBank(text: string): BankType | null {
   if (t.includes('BBVA')) return 'BBVA';
   if (t.includes('BANORTE') || t.includes('BANCO MERCANTIL DEL NORTE')) return 'Banorte';
   if (t.includes('INBURSA') || t.includes('BANCA EN LINEA EMPRESARIAL')) return 'Inbursa';
+  if (t.includes('STP') || t.includes('SISTEMA DE TRANSFERENCIAS')) return 'STP';
+  if (t.includes('CONVENIA')) return 'Convenia';
 
   // Fallback: page layout fingerprints unique to each bank
   // BBVA: distinctive page title + SPEI sender codes
@@ -243,12 +245,105 @@ function parseInbursa(text: string): RawTx[] {
   return results;
 }
 
+// ── STP Parser ─────────────────────────────────────────────────────────────
+function parseSTP(text: string): RawTx[] {
+  const results: RawTx[] = [];
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    const dateM = line.match(/\b(\d{2}\/\d{2}\/\d{4}|\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4})\b/);
+    if (!dateM) continue;
+
+    const date = dateM[1];
+    const combined = [line, lines[i + 1] ?? '', lines[i + 2] ?? ''].join(' ');
+
+    const amounts = [...combined.matchAll(/\$?\s*([\d,]+\.\d{2})/g)].map(m => parseMXN(m[1]));
+    if (amounts.length === 0) continue;
+
+    let amount = amounts[0];
+    
+    const isDebit = /RETIRO|EGRESO|CARGO|PAGO|ENVIADO|ENVIO|-[–\s]*\$/i.test(combined);
+    if (isDebit) {
+      amount = -Math.abs(amount);
+    } else {
+      amount = Math.abs(amount);
+    }
+
+    const refM = combined.match(/\b([A-Z0-9]{15,30})\b/);
+    const reference = refM?.[1] ?? '';
+
+    const descM = combined.match(/(?:CONCEPTO|DESCRIPCION|MOTIVO|REFERENCIA):\s*([^$]*)/i);
+    let description = descM?.[1]?.trim() || '';
+    if (!description) {
+      description = combined.replace(/\$[\d,]+\.\d{2}/g, '').replace(date, '').replace(reference, '').trim().substring(0, 80);
+    }
+
+    results.push({
+      date,
+      description: description.replace(/\s+/g, ' ').substring(0, 100) || 'Transferencia STP',
+      reference,
+      amount,
+      lowConfidence: !refM,
+    });
+  }
+
+  return results;
+}
+
+// ── Convenia Parser ────────────────────────────────────────────────────────
+function parseConvenia(text: string): RawTx[] {
+  const results: RawTx[] = [];
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    const dateM = line.match(/\b(\d{2}\/\d{2}\/\d{4}|\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4})\b/);
+    if (!dateM) continue;
+
+    const date = dateM[1];
+    const combined = [line, lines[i + 1] ?? '', lines[i + 2] ?? ''].join(' ');
+
+    const amounts = [...combined.matchAll(/\$?\s*([\d,]+\.\d{2})/g)].map(m => parseMXN(m[1]));
+    if (amounts.length === 0) continue;
+
+    let amount = amounts[0];
+    
+    const isCredit = /DEPOSITO|ABONO|INYECCION|INGRESO/i.test(combined);
+    if (!isCredit) {
+      amount = -Math.abs(amount);
+    }
+
+    const refM = combined.match(/\b(CONV-\d+|FOLIO-\d+|\b\d{6,12}\b)/i);
+    const reference = refM?.[1] ?? '';
+
+    const descM = combined.match(/(?:CONCEPTO|DESCRIPCION|PAGO|NOMINA|DISPERSION):\s*([^$]*)/i);
+    let description = descM?.[1]?.trim() || '';
+    if (!description) {
+      description = combined.replace(/\$[\d,]+\.\d{2}/g, '').replace(date, '').replace(reference, '').trim().substring(0, 80);
+    }
+
+    results.push({
+      date,
+      description: description.replace(/\s+/g, ' ').substring(0, 100) || 'Transacción Convenia',
+      reference,
+      amount,
+      lowConfidence: !refM,
+    });
+  }
+
+  return results;
+}
+
 // ── Main Service ───────────────────────────────────────────────────────────
 
 export const OcrService = {
   async processScreenshot(
     file: File,
-    onProgress?: (pct: number) => void
+    onProgress?: (pct: number) => void,
+    selectedBank?: string
   ): Promise<OcrParsedTransaction[]> {
     onProgress?.(5);
 
@@ -271,23 +366,28 @@ export const OcrService = {
 
     onProgress?.(85);
 
-    const bank = detectBank(rawText);
-    if (!bank) {
+    const resolvedBank = (selectedBank && ['BBVA', 'Banorte', 'Inbursa', 'STP', 'Convenia'].includes(selectedBank))
+      ? (selectedBank as BankType)
+      : detectBank(rawText);
+
+    if (!resolvedBank) {
       const preview = rawText.replace(/\s+/g, ' ').substring(0, 300);
       console.warn('[OcrService] Could not detect bank. OCR preview:', preview);
       throw new Error(
-        'No se pudo identificar el banco. Asegúrese de que la captura sea de BBVA, Banorte o Inbursa.'
+        'No se pudo identificar el banco. Asegúrese de que la captura sea de BBVA, Banorte, STP, Convenia o Inbursa.'
       );
     }
 
     const rawTxs: RawTx[] =
-      bank === 'BBVA'    ? parseBBVA(rawText) :
-      bank === 'Banorte' ? parseBanorte(rawText) :
-                           parseInbursa(rawText);
+      resolvedBank === 'BBVA'     ? parseBBVA(rawText) :
+      resolvedBank === 'Banorte'  ? parseBanorte(rawText) :
+      resolvedBank === 'Inbursa'  ? parseInbursa(rawText) :
+      resolvedBank === 'STP'      ? parseSTP(rawText) :
+                                    parseConvenia(rawText);
 
     if (rawTxs.length === 0) {
       throw new Error(
-        `Se detectó ${bank} pero no se encontraron transacciones. Verifique que la captura muestre la tabla de movimientos.`
+        `Se detectó ${resolvedBank} pero no se encontraron transacciones. Verifique que la captura muestre la tabla de movimientos.`
       );
     }
 

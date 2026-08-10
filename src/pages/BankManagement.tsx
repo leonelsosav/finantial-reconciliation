@@ -47,6 +47,7 @@ export const BankManagement = () => {
 
   // Account / Company filter context
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
+  const [selectedBank, setSelectedBank] = useState<string>('Banorte');
 
   // OCR/Screenshot states
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -203,9 +204,13 @@ export const BankManagement = () => {
     setZoomLevel(100);
 
     try {
-      const transactions = await OcrService.processScreenshot(file, (pct) => {
-        setProcessingProgress(pct);
-      });
+      const transactions = await OcrService.processScreenshot(
+        file,
+        (pct) => {
+          setProcessingProgress(pct);
+        },
+        selectedBank
+      );
       setParsedBatch(transactions);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Error desconocido';
@@ -384,6 +389,20 @@ export const BankManagement = () => {
                   {c.name} - Cuentas
                 </option>
               ))}
+            </select>
+          </div>
+
+          <div className={styles.selectWrapper}>
+            <select 
+              value={selectedBank} 
+              onChange={e => setSelectedBank(e.target.value)}
+              className={styles.bankSelect}
+            >
+              <option value="Banorte">Banorte</option>
+              <option value="BBVA">BBVA</option>
+              <option value="STP">STP</option>
+              <option value="Convenia">Convenia</option>
+              <option value="Inbursa">Inbursa</option>
             </select>
           </div>
           

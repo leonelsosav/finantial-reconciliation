@@ -82,6 +82,25 @@
   }
 }
 
+.bankSelect {
+  padding: 8px 16px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background-color: #ffffff;
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  min-width: 140px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s;
+
+  &:focus {
+    border-color: #10b981;
+  }
+}
+
 .uploadBtn {
   display: flex;
   align-items: center;
