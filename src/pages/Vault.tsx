@@ -98,6 +98,20 @@ export const Vault = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'VERIFIED' | 'PROCESSED'>('ALL');
   const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const [drawerCompanyFilter, setDrawerCompanyFilter] = useState<string | null>(null);
+
+  // Derived drawer list & filtering
+  const participatingCompanies = useMemo(() => {
+    if (!selectedGroup || !companies) return [];
+    const companyIds = Array.from(new Set(selectedGroup.records.map(r => r.internal_company_id).filter(Boolean)));
+    return companyIds.map(id => companies.find(c => c.id === id)).filter((c): c is InternalCompany => !!c);
+  }, [selectedGroup, companies]);
+
+  const filteredDrawerRecords = useMemo(() => {
+    if (!selectedGroup) return [];
+    if (!drawerCompanyFilter) return selectedGroup.records;
+    return selectedGroup.records.filter(r => r.internal_company_id === drawerCompanyFilter);
+  }, [selectedGroup, drawerCompanyFilter]);
 
   // Ingestion stats derivations
   const successLogsCount = useMemo(() => ingestionLogs.filter(l => l.type === 'success').length, [ingestionLogs]);
@@ -353,7 +367,7 @@ export const Vault = () => {
         const emisorNombre = emisorEl?.getAttribute('Nombre') || '';
         const receptorRfc = receptorEl?.getAttribute('Rfc') || '';
         const receptorNombre = receptorEl?.getAttribute('Nombre') || '';
-        const uuid = timbreEl?.getAttribute('UUID') || '';
+        const uuid = (timbreEl?.getAttribute('UUID') || '').toLowerCase();
         const total = Number(comprobanteEl.getAttribute('Total') || 0);
         const fechaAttr = comprobanteEl.getAttribute('Fecha') || '';
         const operationDate = fechaAttr.split('T')[0] || DateEngine.getLocalYYYYMMDD(new Date());
@@ -623,8 +637,22 @@ export const Vault = () => {
     }
 
     try {
+      // 1. Separate local duplicates within the current uploaded batch
+      const batchUuids = new Set<string>();
+      const localUniqueInvoices: any[] = [];
+      const localDuplicates: any[] = [];
+
+      parsedInvoices.forEach(inv => {
+        if (batchUuids.has(inv.invoice_uuid)) {
+          localDuplicates.push(inv);
+        } else {
+          batchUuids.add(inv.invoice_uuid);
+          localUniqueInvoices.push(inv);
+        }
+      });
+
       setActiveUploadFile('Verificando duplicados en la base de datos...');
-      const uuids = parsedInvoices.map(x => x.invoice_uuid);
+      const uuids = localUniqueInvoices.map(x => x.invoice_uuid);
 
       // Query database for existing UUIDs in chunks of 50 to avoid query size limits
       const existingUuids = new Set<string>();
@@ -644,9 +672,10 @@ export const Vault = () => {
         }
       }
 
-      // Filter out duplicate invoices
-      const uniqueParsedInvoices = parsedInvoices.filter(x => !existingUuids.has(x.invoice_uuid));
-      const duplicatesCount = parsedInvoices.length - uniqueParsedInvoices.length;
+      // 2. Filter out database duplicates from the save list
+      const uniqueParsedInvoices = localUniqueInvoices.filter(x => !existingUuids.has(x.invoice_uuid));
+      const dbDuplicatesCount = localUniqueInvoices.length - uniqueParsedInvoices.length;
+      const totalDuplicatesCount = localDuplicates.length + dbDuplicatesCount;
 
       if (uniqueParsedInvoices.length > 0) {
         setActiveUploadFile(`Guardando ${uniqueParsedInvoices.length} facturas nuevas...`);
@@ -671,15 +700,19 @@ export const Vault = () => {
         }
       }
 
-      // Build report log objects
+      // 3. Build log entries for reports
       parsedInvoices.forEach(inv => {
-        const isDuplicate = existingUuids.has(inv.invoice_uuid);
+        const isLocalDuplicate = localDuplicates.some(x => x.invoice_uuid === inv.invoice_uuid && x !== inv);
+        const isDbDuplicate = existingUuids.has(inv.invoice_uuid);
         const fileName = uuidToFilenameMap.get(inv.invoice_uuid) || 'Factura';
-        if (isDuplicate) {
+
+        if (isLocalDuplicate || isDbDuplicate) {
           tempLogs.push({
             filename: fileName,
             type: 'error',
-            message: `Factura duplicada. UUID ya registrado en el sistema.`,
+            message: isLocalDuplicate 
+              ? 'Factura repetida en el mismo lote.' 
+              : 'Factura duplicada. UUID ya registrado en el sistema.',
             uuid: inv.invoice_uuid,
             amount: inv.amount_gross,
             timestamp: new Date().toLocaleTimeString()
@@ -704,6 +737,7 @@ export const Vault = () => {
 
       setIngestionLogs(tempLogs);
 
+      // 4. Construct alert message and pick the correct modal style
       let message = `Ingestión finalizada.\n`;
       if (uniqueParsedInvoices.length > 0) {
         message += `- Cargadas con éxito: ${uniqueParsedInvoices.length} facturas\n`;
@@ -712,14 +746,23 @@ export const Vault = () => {
       if (cancelUpdatesCount > 0) {
         message += `- Facturas existentes marcadas como canceladas: ${cancelUpdatesCount}\n`;
       }
-      if (duplicatesCount > 0) {
-        message += `- Omitidas por duplicadas: ${duplicatesCount}\n`;
+      if (totalDuplicatesCount > 0) {
+        message += `- Omitidas por duplicadas: ${totalDuplicatesCount}\n`;
       }
-      const parsingErrorsCount = tempLogs.filter(l => l.type === 'error' && !l.message.includes('duplicada')).length;
+      const parsingErrorsCount = tempLogs.filter(l => l.type === 'error' && !l.message.includes('duplicada') && !l.message.includes('repetida')).length;
       if (parsingErrorsCount > 0) {
         message += `- Errores de catálogo/formato (no guardados): ${parsingErrorsCount}\n`;
       }
-      showAlert('success', 'Ingestión Completada', message);
+
+      if (totalDuplicatesCount > 0) {
+        if (uniqueParsedInvoices.length === 0) {
+          showAlert('error', 'Carga Omitida (Duplicados)', `No se guardó ninguna factura. Todas las facturas del lote (${totalDuplicatesCount}) ya están registradas o repetidas.`);
+        } else {
+          showAlert('info', 'Carga Realizada con Advertencia', `Se guardaron ${uniqueParsedInvoices.length} facturas nuevas, pero se omitieron ${totalDuplicatesCount} facturas duplicadas.\n\nRevise el reporte de alertas para ver los detalles.`);
+        }
+      } else {
+        showAlert('success', 'Ingestión Completada', message);
+      }
 
       // Reload audit list
       fetchBilling({
@@ -728,8 +771,10 @@ export const Vault = () => {
     } catch (err: any) {
       console.error('Error al guardar facturas:', err);
       showAlert('error', 'Error al Guardar', `Error al guardar facturas: ${err.message}`);
+      
+      const isValidationError = err.message.includes('UUID') || err.message.includes('existen') || err.message.includes('repetidos');
       tempLogs.push({
-        filename: 'Error general de base de datos',
+        filename: isValidationError ? 'Control de Duplicados' : 'Error general de base de datos',
         type: 'error',
         message: err.message || 'Error de conexión',
         timestamp: new Date().toLocaleTimeString()
@@ -775,6 +820,7 @@ export const Vault = () => {
 
   const handleOpenDrawer = (group: typeof uploadGroups[0]) => {
     setSelectedGroup(group);
+    setDrawerCompanyFilter(null);
     setIsDrawerOpen(true);
   };
 
@@ -1227,6 +1273,35 @@ export const Vault = () => {
                 </div>
               </div>
 
+              {/* Participating Companies Filter */}
+              {participatingCompanies.length > 0 && (
+                <div className={styles.drawerCompanyFilterSection}>
+                  <span className={styles.filterTitle}>Empresas Internas Participantes</span>
+                  <div className={styles.companyPills}>
+                    <button
+                      type="button"
+                      className={`${styles.companyPill} ${!drawerCompanyFilter ? styles.active : ''}`}
+                      onClick={() => setDrawerCompanyFilter(null)}
+                    >
+                      Todas ({selectedGroup.records.length})
+                    </button>
+                    {participatingCompanies.map(comp => {
+                      const count = selectedGroup.records.filter(r => r.internal_company_id === comp.id).length;
+                      return (
+                        <button
+                          key={comp.id}
+                          type="button"
+                          className={`${styles.companyPill} ${drawerCompanyFilter === comp.id ? styles.active : ''}`}
+                          onClick={() => setDrawerCompanyFilter(comp.id)}
+                        >
+                          {comp.name} ({count})
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <h4 className={styles.drawerTableTitle}>Facturas Extraídas (Datos de Margen Redactados)</h4>
               <div className={styles.drawerTableWrapper}>
                 <table className={styles.drawerTable}>
@@ -1239,7 +1314,7 @@ export const Vault = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {selectedGroup.records.map(record => {
+                    {filteredDrawerRecords.map(record => {
                       const recordClient = clients.find(c => c.id === record.client_id);
                       const recordClientName = recordClient?.commercial_name || recordClient?.name || 'Cliente';
 

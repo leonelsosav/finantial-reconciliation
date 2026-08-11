@@ -1017,6 +1017,50 @@
   }
 }
 
+.drawerCompanyFilterSection {
+  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  .filterTitle {
+    font-size: 10px;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: #64748b;
+    letter-spacing: 0.05em;
+  }
+
+  .companyPills {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .companyPill {
+    background-color: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    color: #475569;
+    padding: 6px 12px;
+    border-radius: 9999px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    &:hover {
+      background-color: #e2e8f0;
+      color: #0f172a;
+    }
+
+    &.active {
+      background-color: #0f172a;
+      border-color: #0f172a;
+      color: #ffffff;
+    }
+  }
+}
+
 .drawerTableTitle {
   font-size: 10px;
   text-transform: uppercase;
