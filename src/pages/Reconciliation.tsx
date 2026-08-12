@@ -468,7 +468,7 @@ export const Reconciliation = () => {
 
               {/* Adjustment Action 1: Force Direct Adjustment */}
               <div className={styles.adjustmentBlock}>
-                <h3>1. Ajuste Directo Forzado</h3>
+                <h3>1. Marcar como gasto sin factura</h3>
                 <p>Clasifique esta partida como un gasto contable ordinario o egreso sin comprobante fiscal de nómina (ej. tarifas bancarias).</p>
                 <div className={styles.inputGroup}>
                   <label htmlFor="forceComment">Descripción/Concepto del Gasto (Requerido)</label>
@@ -492,7 +492,7 @@ export const Reconciliation = () => {
 
               {/* Adjustment Action 2: Link with Partial Variance */}
               <div className={styles.adjustmentBlock}>
-                <h3>2. Vincular con Varianza Parcial</h3>
+                <h3>2. Vincular con pago parcial de factura</h3>
                 <p>Vincule esta transacción a una factura XML existente. Reste/asocie la varianza al fondo de garantía (retainer) del cliente.</p>
                 
                 <div className={styles.selectInvoiceGroup}>
