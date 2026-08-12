@@ -248,13 +248,19 @@ export class ReconciliationService {
         if (txAmount > 0) {
           // Deposit / Inflow
           // Find matching billing record where amount_gross matches the deposit
-          const { data: matchedBills, error: matchErr } = await supabase
+          let query = supabase
             .from('billing_records')
             .select('*')
             .eq('is_reconciled', false)
-            .eq('client_id', clientId)
-            .gte('operation_date', minDateStr)
-            .lte('operation_date', maxDateStr)
+            .eq('client_id', clientId);
+
+          if (!clientIdOverride) {
+            query = query
+              .gte('operation_date', minDateStr)
+              .lte('operation_date', maxDateStr);
+          }
+
+          const { data: matchedBills, error: matchErr } = await query
             .order('operation_date', { ascending: true });
 
           if (matchErr) throw new Error(`Error searching matching billing records: ${matchErr.message}`);
@@ -270,12 +276,18 @@ export class ReconciliationService {
           const minPayout = txAmount * 0.85;
           const maxPayout = txAmount * 0.995;
 
-          const { data: potentialPayouts } = await supabase
+          let queryPayouts = supabase
             .from('bank_transactions')
             .select('*')
-            .eq('is_reconciled', false)
-            .gte('transaction_date', minDateStr)
-            .lte('transaction_date', maxDateStr);
+            .eq('is_reconciled', false);
+
+          if (!clientIdOverride) {
+            queryPayouts = queryPayouts
+              .gte('transaction_date', minDateStr)
+              .lte('transaction_date', maxDateStr);
+          }
+
+          const { data: potentialPayouts } = await queryPayouts;
 
           const matchedPayoutTx = potentialPayouts?.find(p => {
             const val = Math.abs(Number(p.amount));
@@ -325,13 +337,19 @@ export class ReconciliationService {
 
           // Find matching billing record where the payout amount matches the net payroll calculation
           // (meaning the payout amount is between 85% and 99.5% of the billing record's gross amount)
-          const { data: matchedBills, error: matchErr } = await supabase
+          let query = supabase
             .from('billing_records')
             .select('*')
             .eq('is_reconciled', false)
-            .eq('client_id', clientId)
-            .gte('operation_date', minDateStr)
-            .lte('operation_date', maxDateStr)
+            .eq('client_id', clientId);
+
+          if (!clientIdOverride) {
+            query = query
+              .gte('operation_date', minDateStr)
+              .lte('operation_date', maxDateStr);
+          }
+
+          const { data: matchedBills, error: matchErr } = await query
             .order('operation_date', { ascending: true });
 
           if (matchErr) throw new Error(`Error searching matching billing records: ${matchErr.message}`);
@@ -353,14 +371,19 @@ export class ReconciliationService {
           const amountCommission = amountGross - amountNetPayroll;
 
           // Search for the matching deposit inflow (+amountGross) in bank_transactions
-          const { data: matchedDepositTxs } = await supabase
+          let queryDeposit = supabase
             .from('bank_transactions')
             .select('*')
             .eq('is_reconciled', false)
-            .eq('amount', amountGross)
-            .gte('transaction_date', minDateStr)
-            .lte('transaction_date', maxDateStr)
-            .limit(1);
+            .eq('amount', amountGross);
+
+          if (!clientIdOverride) {
+            queryDeposit = queryDeposit
+              .gte('transaction_date', minDateStr)
+              .lte('transaction_date', maxDateStr);
+          }
+
+          const { data: matchedDepositTxs } = await queryDeposit.limit(1);
 
           const matchedDepositTx = matchedDepositTxs && matchedDepositTxs.length > 0 ? matchedDepositTxs[0] : null;
 
