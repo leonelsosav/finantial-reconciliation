@@ -10,9 +10,6 @@ export interface ParsedTransaction {
 }
 
 export class StatementParserService {
-  private static parseMoney(str: string): number {
-    return parseFloat(str.replace(/[^0-9.-]/g, '')) || 0;
-  }
 
   /**
    * Parse Banorte PDF text dump
@@ -280,7 +277,6 @@ export class StatementParserService {
       const col0 = parts[0].trim(); // Date
       const col4 = parts[4].trim(); // Cargo
       const col5 = parts[5].trim(); // Abono
-      const col6 = parts[6].trim(); // Saldo
 
       const dateStartMatch = col0.match(/^(\d{1,2})\s+de\s+([a-zA-ZñÑáéíóúÁÉÍÓÚ]+)\s+de/);
       const hasMoney = (col4 && col4.includes('$')) || (col5 && col5.includes('$'));

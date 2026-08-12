@@ -58,6 +58,8 @@ export const BankManagement = () => {
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [processingProgress, setProcessingProgress] = useState<number>(0);
   const [isCommitting, setIsCommitting] = useState<boolean>(false);
+  const [commitProgress, setCommitProgress] = useState<number>(0);
+  const [commitStatusText, setCommitStatusText] = useState<string>('');
 
   // Draggable split-pane width (in percentage)
 
@@ -480,6 +482,8 @@ export const BankManagement = () => {
     }
 
     setIsCommitting(true);
+    setCommitProgress(0);
+    setCommitStatusText('Guardando lote de transacciones en la base de datos...');
     try {
       // Form payload
       const payload = parsedBatch.map(r => ({
@@ -507,6 +511,11 @@ export const BankManagement = () => {
         for (let i = 0; i < insertedData.length; i++) {
           const tx = insertedData[i];
           const originalRow = parsedBatch[i];
+          
+          const progressPercent = Math.round(((i + 1) / insertedData.length) * 100);
+          setCommitProgress(progressPercent);
+          setCommitStatusText(`Procesando conciliación ${i + 1} de ${insertedData.length}: ${tx.description.slice(0, 30)}...`);
+
           if (originalRow && originalRow.client_id) {
             await ReconciliationService.processReconciliationEvent(tx.id, 'bank_transaction', originalRow.client_id);
           }
@@ -889,7 +898,7 @@ export const BankManagement = () => {
                 paginatedTxs.map(tx => (
                   <tr key={tx.id} className={tx.is_reconciled ? '' : styles.pendingRow}>
                     <td className={styles.ledgerDate}>{tx.transaction_date}</td>
-                    <td className={styles.ledgerDesc} title={tx.description}>{tx.description}</td>
+                    <td className={styles.ledgerDesc} title={tx.description || undefined}>{tx.description}</td>
                     <td className={`${styles.ledgerRef} ${styles.monoText}`}>{tx.reference_number || '-'}</td>
                     <td className={`${styles.ledgerAmount} ${styles.monoText} ${tx.amount >= 0 ? styles.positiveText : styles.negativeText}`}>
                       {tx.amount >= 0 ? '+' : '-'}
@@ -937,6 +946,23 @@ export const BankManagement = () => {
           </div>
         </div>
       </section>
+      {isCommitting && (
+        <div className={styles.committingOverlay}>
+          <div className={styles.committingModal}>
+            <Loader2 size={48} className={styles.committingSpinner} />
+            <h2>Procesando Confirmación</h2>
+            <p className={styles.statusText}>{commitStatusText}</p>
+            <div className={styles.progressContainer}>
+              <div 
+                className={styles.progressBar} 
+                style={{ width: `${commitProgress}%` }}
+              />
+            </div>
+            <span className={styles.progressPercentage}>{commitProgress}% completado</span>
+          </div>
+        </div>
+      )}
+
       <ModalAlert 
         isOpen={modalConfig.isOpen}
         type={modalConfig.type}

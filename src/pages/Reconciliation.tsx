@@ -10,8 +10,6 @@ import {
   AlertTriangle, 
   Loader2, 
   X, 
-  Filter,
-  Download,
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
@@ -68,13 +66,6 @@ export const Reconciliation = () => {
     loadUnreconciledData();
   }, [isAuthorized, startDate, endDate, fetchClients]);
 
-  // Dynamic success rate based on historical data
-  const dynamicSuccessRate = useMemo(() => {
-    const total = bankTransactions.length;
-    if (total === 0) return '100.0';
-    const reconciled = bankTransactions.filter(tx => tx.is_reconciled).length;
-    return ((reconciled / total) * 100).toFixed(1);
-  }, [bankTransactions]);
 
   // Classify exceptions from bank transactions
   const exceptions = useMemo(() => {
@@ -367,7 +358,7 @@ export const Reconciliation = () => {
                       </span>
                     </td>
                     <td>
-                      <div className={styles.entityName} title={exc.description}>{exc.description}</div>
+                      <div className={styles.entityName} title={exc.description || undefined}>{exc.description}</div>
                       <span className={styles.entitySub}>
                         {exc.exceptionDetail === 'Payment received without XML linkage' 
                           ? 'Pago recibido sin vínculo XML'
