@@ -195,8 +195,7 @@ export const BankManagement = () => {
       document.head.appendChild(script);
     });
   };
-
-  const extractTextFromPdf = async (file: File, onProgress: (pct: number) => void): Promise<{ text: string; pages: number }> => {
+  const extractTextFromPdf = async (file: File, bank: BankType, onProgress: (pct: number) => void): Promise<{ text: string; pages: number }> => {
     const pdfjsLib = await loadPdfJs();
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -207,7 +206,7 @@ export const BankManagement = () => {
       const page = await pdf.getPage(i);
       const textContent = await page.getTextContent();
       
-      // Group items by Y coordinate (tolerance of 3.0 pt for row alignments)
+      // Group items by Y coordinate (tolerance of 7.0 pt for row alignments)
       const items = textContent.items as any[];
       const lines: { y: number; items: any[] }[] = [];
       
@@ -217,7 +216,11 @@ export const BankManagement = () => {
         const x = item.transform[4];
         const y = item.transform[5];
         
-        let foundLine = lines.find(l => Math.abs(l.y - y) < 3.0);
+        if (item.str && item.str.includes('$')) {
+          console.log(`[DEBUG] browser money item: "${item.str}" | X: ${x.toFixed(2)} | Y: ${y.toFixed(2)}`);
+        }
+        
+        let foundLine = lines.find(l => Math.abs(l.y - y) < 7.0);
         if (!foundLine) {
           foundLine = { y, items: [] };
           lines.push(foundLine);
@@ -230,30 +233,48 @@ export const BankManagement = () => {
       
       let pageText = '';
       for (const line of lines) {
-        // Sort items left-to-right (ascending X coordinate)
-        line.items.sort((a, b) => a.x - b.x);
-        
         let lineStr = '';
-        for (let k = 0; k < line.items.length; k++) {
-          const item = line.items[k];
-          if (k > 0) {
-            const prev = line.items[k - 1];
-            const gap = item.x - (prev.x + prev.width);
-            
-            if (gap > 20.0) {
-              // Large horizontal gap indicates different columns: insert tab
-              lineStr += '\t';
-            } else if (gap > 3.0) {
-              // Standard word separation
-              lineStr += ' ';
+
+        if (bank === 'BBVA') {
+          // Strict 5-column boundary mapping for BBVA
+          const cols = ['', '', '', '', ''];
+          line.items.sort((a, b) => a.x - b.x);
+
+          for (const item of line.items) {
+            let colIndex = 4;
+            if (item.x < 90) colIndex = 0;
+            else if (item.x < 310) colIndex = 1;
+            else if (item.x < 375) colIndex = 2;
+            else if (item.x < 445) colIndex = 3;
+
+            if (cols[colIndex]) {
+              cols[colIndex] += ' ' + item.str;
             } else {
-              // Tiny gap: check if boundary spacing is missing
-              if (gap > 1.0 && !prev.str.endsWith(' ') && !item.str.startsWith(' ')) {
-                lineStr += ' ';
-              }
+              cols[colIndex] = item.str;
             }
           }
-          lineStr += item.str;
+          lineStr = cols.join('\t');
+        } else {
+          // Standard tab-gap logic for other banks
+          line.items.sort((a, b) => a.x - b.x);
+          for (let k = 0; k < line.items.length; k++) {
+            const item = line.items[k];
+            if (k > 0) {
+              const prev = line.items[k - 1];
+              const gap = item.x - (prev.x + prev.width);
+              
+              if (gap > 20.0) {
+                lineStr += '\t';
+              } else if (gap > 3.0) {
+                lineStr += ' ';
+              } else {
+                if (gap > 1.0 && !prev.str.endsWith(' ') && !item.str.startsWith(' ')) {
+                  lineStr += ' ';
+                }
+              }
+            }
+            lineStr += item.str;
+          }
         }
         pageText += lineStr + '\n';
       }
@@ -261,7 +282,7 @@ export const BankManagement = () => {
       fullText += pageText + '\n';
     }
     return { text: fullText, pages: pdf.numPages };
-  };
+  };;
 
   const extractTextFromCsv = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -306,7 +327,7 @@ export const BankManagement = () => {
         if (!file.name.toLowerCase().endsWith('.pdf')) {
           throw new Error(`Para ${selectedBank} debe subir un archivo de formato PDF (.pdf).`);
         }
-        const { text, pages } = await extractTextFromPdf(file, (pct) => {
+        const { text, pages } = await extractTextFromPdf(file, selectedBank, (pct) => {
           setProcessingProgress(pct);
         });
         setPdfPageCount(pages);

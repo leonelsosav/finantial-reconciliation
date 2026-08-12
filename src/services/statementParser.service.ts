@@ -149,28 +149,28 @@ export class StatementParserService {
     }));
   }
 
-  /**
-   * Parse BBVA PDF text dump
-   */
   public static parseBBVA(text: string): ParsedTransaction[] {
     const lines = text.split('\n');
     const transactions: ParsedTransaction[] = [];
     let currentTx: any = null;
 
-    const parseMoney = (str: string) => this.parseMoney(str);
+    const parseMoney = (str: string) => parseFloat(str.replace(/[^0-9.-]/g, '')) || 0;
 
-    // Map month names to numbers for Spanish statements
     const monthMap: Record<string, string> = {
       '01': '01', '02': '02', '03': '03', '04': '04', '05': '05', '06': '06',
       '07': '07', '08': '08', '09': '09', '10': '10', '11': '11', '12': '12'
     };
 
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
+      const line = lines[i];
+      if (!line.trim()) continue;
 
-      // BBVA date format is DD-MM (e.g. 31-07)
-      const dateMatch = line.match(/^(\d{2}-\d{2})\b/);
+      const parts = line.split('\t').map(x => x.trim());
+      if (parts.length < 5) continue;
+
+      const datePart = parts[0];
+      const dateMatch = datePart.match(/^(\d{2}-\d{2})\b/);
+
       if (dateMatch) {
         if (currentTx) {
           transactions.push(currentTx);
@@ -180,51 +180,51 @@ export class StatementParserService {
         const [day, month] = dateStr.split('-');
         const formattedDate = `2026-${monthMap[month] || '07'}-${day}`;
 
-        // Check if there are money values on the same line (compact layouts)
-        const parts = line.split('\t').map(x => x.trim()).filter(Boolean);
-        const moneyParts = parts.filter(p => /^\$\s*[0-9,.-]+$/.test(p));
+        const desc = parts[1] || '';
+        const cargoVal = parts[2];
+        const abonoVal = parts[3];
 
-        if (moneyParts.length >= 2) {
-          const amt = parseMoney(moneyParts[0]);
-          const desc = parts[0].substring(5).trim(); // remove date prefix
+        let amount = 0;
+        let completedAmount = false;
 
-          currentTx = {
-            id: `bbva-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            date: formattedDate,
-            description: desc,
-            reference: '',
-            amount: amt,
-            lowConfidence: false,
-            completed: true
-          };
-        } else {
-          // Multiline transaction
-          currentTx = {
-            id: `bbva-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            date: formattedDate,
-            description: line.substring(5).trim(), // remove date prefix
-            reference: '',
-            amount: 0,
-            lowConfidence: false,
-            completed: false
-          };
+        // Check if there are digits in columns to identify money amount
+        if (cargoVal && /\d/.test(cargoVal)) {
+          amount = -parseMoney(cargoVal);
+          completedAmount = true;
+        } else if (abonoVal && /\d/.test(abonoVal)) {
+          amount = parseMoney(abonoVal);
+          completedAmount = true;
         }
-      } else if (currentTx && !currentTx.completed) {
-        // Look for money values
-        const parts = line.split('\t').map(x => x.trim()).filter(Boolean);
-        const moneyParts = parts.filter(p => /^\$\s*[0-9,.-]+$/.test(p));
 
-        if (moneyParts.length >= 2) {
-          currentTx.amount = parseMoney(moneyParts[0]);
-          const descExtra = parts[0].trim();
-          if (descExtra) {
+        currentTx = {
+          id: `bbva-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          date: formattedDate,
+          description: desc,
+          reference: '',
+          amount: amount,
+          lowConfidence: false,
+          completedAmount: completedAmount
+        };
+      } else if (currentTx) {
+        const descExtra = parts[1];
+        if (descExtra && !descExtra.includes('BBVANet') && !descExtra.includes('Page') && !descExtra.includes('--')) {
+          if (currentTx.description) {
             currentTx.description += ' ' + descExtra;
+          } else {
+            currentTx.description = descExtra;
           }
-          currentTx.completed = true;
-        } else {
-          // Append description text if not footer/header
-          if (!line.includes('BBVANet') && !line.includes('Page') && !line.includes('--')) {
-            currentTx.description += ' ' + line;
+        }
+
+        if (!currentTx.completedAmount) {
+          const cargoVal = parts[2];
+          const abonoVal = parts[3];
+
+          if (cargoVal && /\d/.test(cargoVal)) {
+            currentTx.amount = -parseMoney(cargoVal);
+            currentTx.completedAmount = true;
+          } else if (abonoVal && /\d/.test(abonoVal)) {
+            currentTx.amount = parseMoney(abonoVal);
+            currentTx.completedAmount = true;
           }
         }
       }
@@ -234,25 +234,18 @@ export class StatementParserService {
       transactions.push(currentTx);
     }
 
-    // Resolve signs and clean descriptions
+    // Resolve references and clean descriptions
     return transactions.map(tx => {
-      const desc = tx.description.toUpperCase();
-      let isDeposit = false;
-
       // Extract reference number if present in description (e.g. /0032572577 or /0166148304)
       const refMatch = tx.description.match(/\/(\d+)\b/);
       const reference = refMatch ? refMatch[1] : '';
 
-      if (desc.includes('RECIBIDO') || desc.includes('COMPENSACION') || desc.includes('ABONO') || desc.includes('DEPOSITO') || desc.includes('CREDITO')) {
-        isDeposit = true;
-      } else if (desc.includes('ENVIADO') || desc.includes('PAGO') || desc.includes('CARGO') || desc.includes('RETIRO') || desc.includes('COMISION') || desc.includes('IVA') || desc.includes('SAT') || desc.includes('IMSS') || desc.includes('GOBIERNO')) {
-        isDeposit = false;
-      }
-
       return {
-        ...tx,
-        amount: isDeposit ? Math.abs(tx.amount) : -Math.abs(tx.amount),
+        id: tx.id,
+        date: tx.date,
         reference,
+        amount: tx.amount,
+        lowConfidence: tx.lowConfidence,
         description: tx.description.replace(/\s+/g, ' ').trim()
       };
     });
