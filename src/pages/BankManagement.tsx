@@ -112,29 +112,29 @@ export const BankManagement = () => {
     }
   }, [companies, selectedCompanyId, profile]);
 
-  // Load transaction history when company context changes
+  // Load transaction history for the selected month across all companies/banks
   const loadTransactions = () => {
-    if (selectedCompanyId) {
-      fetchTransactions({
-        filters: [
-          { column: 'internal_company_id', operator: 'eq', value: selectedCompanyId },
-          { column: 'transaction_date', operator: 'gte', value: startDate },
-          { column: 'transaction_date', operator: 'lte', value: endDate }
-        ],
-        sort: { column: 'transaction_date', direction: 'desc' }
-      });
-    }
+    fetchTransactions({
+      filters: [
+        { column: 'transaction_date', operator: 'gte', value: startDate },
+        { column: 'transaction_date', operator: 'lte', value: endDate }
+      ],
+      sort: { column: 'transaction_date', direction: 'desc' }
+    });
   };
 
   useEffect(() => {
     loadTransactions();
-    // Clear states when company switches
+  }, [startDate, endDate]);
+
+  // Company/bank selectors only apply to the upload workspace, so reset it when they change
+  useEffect(() => {
     setActiveUploadFile(null);
     setSystemPayloadId('');
     setParsedBatch([]);
     setPdfPageCount(null);
     setFileSize(null);
-  }, [selectedCompanyId, startDate, endDate]);
+  }, [selectedCompanyId]);
 
 
 
