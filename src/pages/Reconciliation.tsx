@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useDatabase } from '../hooks/useDatabase';
 import { supabase } from '../lib/supabase';
+import { DateEngine } from '../utils/DateEngine';
 import type { BankTransaction, BillingRecord, Client } from '../types';
 import { 
   AlertTriangle, 
@@ -30,6 +31,7 @@ export const Reconciliation = () => {
   // Page States
   const [selectedException, setSelectedException] = useState<BankTransaction | null>(null);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>('');
+  const [showAllInvoices, setShowAllInvoices] = useState<boolean>(false);
   
   // Pagination State
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -122,10 +124,77 @@ export const Reconciliation = () => {
     setCurrentPage(1);
   }, [exceptions.length]);
 
+  // Prioritized Invoices for matching drawer based on score
+  const prioritizedInvoices = useMemo(() => {
+    if (!selectedException) return [];
+
+    const txAmount = Math.abs(selectedException.amount);
+    const txDateStr = selectedException.transaction_date;
+    const txDesc = (selectedException.description || '').toUpperCase();
+
+    return billingRecords
+      .filter(bill => !bill.is_canceled)
+      .map(bill => {
+        const client = clients.find(c => c.id === bill.client_id);
+        const clientName = (client?.legal_name || client?.name || '').toUpperCase();
+
+        // 1. Client Match score
+        let clientScore = 0;
+        if (clientName && (txDesc.includes(clientName) || clientName.includes(txDesc))) {
+          clientScore = 100;
+        }
+
+        // 2. Amount Match score (exact gross matches deposit, or net matches opex)
+        const billAmount = Number(bill.amount_gross || 0);
+        const amountDiff = Math.abs(billAmount - txAmount);
+        let amountScore = 0;
+        if (amountDiff === 0) {
+          amountScore = 50;
+        } else if (amountDiff < 50) {
+          amountScore = 20;
+        }
+
+        // 3. Date Match score
+        let dateScore = 0;
+        if (txDateStr && bill.operation_date) {
+          const tDate = DateEngine.parseLocalDate(txDateStr);
+          const bDate = DateEngine.parseLocalDate(bill.operation_date);
+          const daysDiff = Math.abs((tDate.getTime() - bDate.getTime()) / (1000 * 60 * 60 * 24));
+          if (daysDiff <= 5) {
+            dateScore = 30;
+          } else if (daysDiff <= 15) {
+            dateScore = 15;
+          } else if (daysDiff <= 30) {
+            dateScore = 5;
+          }
+        }
+
+        const totalScore = clientScore + amountScore + dateScore;
+
+        return {
+          bill,
+          client,
+          score: totalScore
+        };
+      })
+      .sort((a, b) => b.score - a.score);
+  }, [selectedException, billingRecords, clients]);
+
+  const displayedInvoices = useMemo(() => {
+    if (showAllInvoices) {
+      return prioritizedInvoices;
+    }
+    // Filter to only show records with some match score (score >= 15)
+    const suggestions = prioritizedInvoices.filter(item => item.score >= 15);
+    // If no suggestions, fallback to show all
+    return suggestions.length > 0 ? suggestions : prioritizedInvoices;
+  }, [prioritizedInvoices, showAllInvoices]);
+
   // Adjustments Drawer Handlers
   const handleOpenDrawer = (tx: BankTransaction) => {
     setSelectedException(tx);
     setSelectedInvoiceId('');
+    setShowAllInvoices(false);
   };
 
   const handleCloseDrawer = () => {
@@ -231,20 +300,6 @@ export const Reconciliation = () => {
 
   return (
     <div className={styles.container}>
-      {/* Top Header Hub */}
-      <section className={styles.topHub}>
-        {/* Success Rate Stats gauge card */}
-        <div className={styles.metricsCard}>
-          <p className={styles.metricLabel}>TASA DE CONCILIACIÓN AUTOMÁTICA</p>
-          <div className={styles.metricValGroup}>
-            <span className={styles.metricValue}>{dynamicSuccessRate}%</span>
-            <span className={styles.metricBadge}>+0.2% vs anterior</span>
-          </div>
-          <div className={styles.progressRail}>
-            <div className={styles.progressBar} style={{ width: `${dynamicSuccessRate}%` }} />
-          </div>
-        </div>
-      </section>
 
       {/* Exceptions Area */}
       <div className={styles.exceptionsWorkspace}>
@@ -254,11 +309,6 @@ export const Reconciliation = () => {
             {exceptions.length > 0 && (
               <span className={styles.criticalBadge}>{exceptions.length} ELEMENTOS CRÍTICOS</span>
             )}
-          </div>
-          
-          <div className={styles.headerActions}>
-            <button className={styles.iconActionBtn}><Filter size={16} /></button>
-            <button className={styles.iconActionBtn}><Download size={16} /></button>
           </div>
         </header>
 
@@ -425,7 +475,17 @@ export const Reconciliation = () => {
                 <p>Vincule esta transacción a una factura XML existente. Reste/asocie la varianza al fondo de garantía (retainer) del cliente.</p>
                 
                 <div className={styles.selectInvoiceGroup}>
-                  <label htmlFor="invoiceSelect">Facturas Pendientes</label>
+                  <div className={styles.invoiceLabelBar}>
+                    <label htmlFor="invoiceSelect">Facturas Pendientes</label>
+                    <label className={styles.checkboxLabel}>
+                      <input 
+                        type="checkbox"
+                        checked={showAllInvoices}
+                        onChange={e => setShowAllInvoices(e.target.checked)}
+                      />
+                      Mostrar todas
+                    </label>
+                  </div>
                   <select 
                     id="invoiceSelect"
                     value={selectedInvoiceId}
@@ -433,15 +493,19 @@ export const Reconciliation = () => {
                     className={styles.invoiceSelect}
                   >
                     <option value="">Seleccionar Factura...</option>
-                    {billingRecords.filter(bill => !bill.is_canceled).map(bill => {
-                      const client = clients.find(c => c.id === bill.client_id);
+                    {displayedInvoices.map(({ bill, client, score }) => {
                       let displayLabel = '';
+                      const isSuggested = score >= 15;
 
                       if (bill.virtual_bucket_label && bill.virtual_bucket_label.includes(':')) {
                         const [parentUuid, numParcialidad] = bill.virtual_bucket_label.split(':');
                         displayLabel = `PAGO: Parcialidad ${numParcialidad} de Factura: ${parentUuid.slice(0, 8)}...${parentUuid.slice(-6)} - Gross: ${formatCurrency(Number(bill.amount_gross))} (${client?.name || 'Cliente desconocido'})`;
                       } else {
                         displayLabel = `FACTURA: ${bill.invoice_uuid || 'XML-S/N'} - Gross: ${formatCurrency(Number(bill.amount_gross))} (${client?.name || 'Cliente desconocido'})`;
+                      }
+
+                      if (isSuggested) {
+                        displayLabel = `⭐ [SUGERIDA] ${displayLabel}`;
                       }
 
                       return (

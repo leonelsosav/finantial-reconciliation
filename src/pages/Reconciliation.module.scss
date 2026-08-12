@@ -730,6 +730,27 @@
   }
 }
 
+.invoiceLabelBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: #64748b;
+  cursor: pointer;
+  user-select: none;
+
+  input {
+    margin: 0;
+    cursor: pointer;
+  }
+}
+
 .invoiceSelect {
   width: 100%;
   padding: 8px 12px;
