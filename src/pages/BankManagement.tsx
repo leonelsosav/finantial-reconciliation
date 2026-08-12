@@ -9,6 +9,7 @@ import type { BankTransaction, InternalCompany, Client } from '../types';
 import { StatementParserService } from '../services/statementParser.service';
 export type BankType = 'Banorte' | 'BBVA' | 'STP' | 'Convenia' | 'Inbursa';
 import { ReconciliationService } from '../services/reconciliation.service';
+import { PredictionService } from '../services/prediction.service';
 import { 
   Lock, 
   AlertTriangle, 
@@ -57,9 +58,7 @@ export const BankManagement = () => {
   const [isCommitting, setIsCommitting] = useState<boolean>(false);
 
   // Draggable split-pane width (in percentage)
-  const [splitWidth, setSplitWidth] = useState<number>(50);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [isResizing, setIsResizing] = useState(false);
+
 
   const [modalConfig, setModalConfig] = useState<{
     isOpen: boolean;
@@ -129,42 +128,18 @@ export const BankManagement = () => {
     setFileSize(null);
   }, [selectedCompanyId]);
 
-  // Draggable Pane Handlers
-  const handleMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizing(true);
-  };
 
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing || !containerRef.current) return;
-      
-      const containerRect = containerRef.current.getBoundingClientRect();
-      const relativeX = e.clientX - containerRect.left;
-      const percentage = (relativeX / containerRect.width) * 100;
-      
-      // Enforce bounds between 20% and 80%
-      if (percentage >= 20 && percentage <= 80) {
-        setSplitWidth(percentage);
-      }
-    };
 
-    const handleMouseUp = () => {
-      setIsResizing(false);
-    };
-
-    if (isResizing) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = 'col-resize';
+  const handleRemoveFile = () => {
+    setActiveUploadFile(null);
+    setSystemPayloadId('');
+    setParsedBatch([]);
+    setPdfPageCount(null);
+    setFileSize(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = 'default';
-    };
-  }, [isResizing]);
+  };
 
   // File drag & drop handlers
   const handleDragOver = (e: React.DragEvent) => {
@@ -196,17 +171,18 @@ export const BankManagement = () => {
     });
   };
   const extractTextFromPdf = async (file: File, bank: BankType, onProgress: (pct: number) => void): Promise<{ text: string; pages: number }> => {
-    const pdfjsLib = await loadPdfJs();
+    const pdfjs = await loadPdfJs();
     const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
     let fullText = '';
     
-    for (let i = 1; i <= pdf.numPages; i++) {
-      onProgress(Math.round((i / pdf.numPages) * 100));
-      const page = await pdf.getPage(i);
+    // Notify parsing started
+    onProgress(10);
+    
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
       const textContent = await page.getTextContent();
       
-      // Group items by Y coordinate (tolerance of 7.0 pt for row alignments)
       const items = textContent.items as any[];
       const lines: { y: number; items: any[] }[] = [];
       
@@ -379,8 +355,21 @@ export const BankManagement = () => {
             throw new Error(`Banco no soportado: ${selectedBank}`);
         }
       }
+      // Suggest client based on transaction details & existing billing/invoice records
+      const predictedTransactions = await Promise.all(
+        parsedTransactions.map(async (row) => {
+          const prediction = await PredictionService.predictClientFromDescription(
+            row.description,
+            row.amount
+          );
+          return {
+            ...row,
+            client_id: prediction?.client_id || undefined
+          };
+        })
+      );
 
-      setParsedBatch(parsedTransactions);
+      setParsedBatch(predictedTransactions);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Error desconocido';
       console.error('[BankManagement] Ingestion failed:', message);
@@ -585,14 +574,11 @@ export const BankManagement = () => {
         </div>
       </div>
 
-      {/* Ingestion Split view */}
-      <div className={styles.splitWorkspace} ref={containerRef}>
+      {/* Ingestion Workspace view */}
+      <div className={styles.splitWorkspace}>
         
-        {/* Left Pane: Drag-and-Drop Area & OCR Loader */}
-        <section 
-          className={styles.capturePane} 
-          style={{ flex: `0 0 ${splitWidth}%` }}
-        >
+        {/* Top Pane: Drag-and-Drop Area & OCR Loader */}
+        <section className={styles.capturePane}>
           <div className={styles.paneHeader}>
             <span className={styles.paneTitle}>
               <Lock size={12} className={styles.paneTitleIcon} />
@@ -644,13 +630,22 @@ export const BankManagement = () => {
                     Documento Leído Exitosamente
                   </div>
                 </div>
-                <button
-                  type="button"
-                  className={styles.changeFileButton}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  Cambiar Archivo
-                </button>
+                <div className={styles.previewActions}>
+                  <button
+                    type="button"
+                    className={styles.changeFileButton}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    Cambiar Archivo
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.removeFileButton}
+                    onClick={handleRemoveFile}
+                  >
+                    Quitar Archivo
+                  </button>
+                </div>
               </div>
             ) : (
               <div 
@@ -668,115 +663,118 @@ export const BankManagement = () => {
           </div>
         </section>
 
-        {/* Draggable handle bar */}
-        <div 
-          className={`${styles.splitDivider} ${isResizing ? styles.dragging : ''}`}
-          onMouseDown={handleMouseDown}
-        />
-
-        {/* Right Pane: Parsed Preview Stream */}
-        <section 
-          className={styles.entryPane}
-          style={{ flex: 1 }}
-        >
-          <div className={styles.paneHeader}>
-            <span className={`${styles.paneTitle} ${styles.primaryAccent}`}>
-              <Sparkles size={12} className={styles.paneTitleIcon} />
-              FLUJO DE VISTA PREVIA PROCESADA
-            </span>
-          </div>
-
-          <div className={styles.entryTableWrapper}>
-            {parsedBatch.length === 0 ? (
-              <div className={styles.emptyWorkspaceText}>
-                {isProcessing ? 'Procesando captura visual...' : 'Esperando captura para extracción de metadatos...'}
-              </div>
-            ) : (
-              <table className={styles.entryTable}>
-                <thead>
-                  <tr>
-                    <th style={{ width: '120px' }}>Fecha</th>
-                    <th>Descripción</th>
-                    <th style={{ width: '140px' }}>Referencia</th>
-                    <th style={{ width: '180px' }}>Cliente Predicho / Asignado</th>
-                    <th style={{ width: '130px' }} className={styles.alignRight}>Monto</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {parsedBatch.map((row) => (
-                    <tr key={row.id}>
-                      <td className={row.lowConfidence ? styles.lowConfidenceCell : ''}>
-                        {row.date}
-                        {row.lowConfidence && (
-                          <span className={styles.warningIcon} title="Confianza Baja (82%)">
-                            <AlertTriangle size={12} />
-                          </span>
-                        )}
-                      </td>
-                      <td>{row.description}</td>
-                      <td>
-                        <span className={styles.monoText}>{row.reference}</span>
-                      </td>
-                      <td>
-                        <select
-                          className={styles.clientSelect}
-                          value={row.client_id || ''}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setParsedBatch(prev =>
-                              prev.map(item =>
-                                item.id === row.id ? { ...item, client_id: val } : item
-                              )
-                            );
-                          }}
-                        >
-                          <option value="">-- No asignado (Opex/Excepción) --</option>
-                          {clients.map(c => (
-                            <option key={c.id} value={c.id}>
-                              {c.legal_name || c.name}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className={`${styles.alignRight} ${row.amount >= 0 ? styles.positiveText : styles.negativeText} ${styles.monoText}`}>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                          <span>{row.amount >= 0 ? '+' : '-'}{formatCurrency(row.amount)}</span>
-                          {row.amount >= 0 && <CheckCircle2 size={12} className={styles.positiveText} />}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-
-          {parsedBatch.length > 0 && (
-            <div className={styles.entryFooter}>
-              <div className={styles.batchInfo}>
-                <span>Lote: <strong>{parsedBatch.length} transacciones</strong></span>
-                <span className={styles.dividerDot}></span>
-                <span>Fondeo: <strong className={styles.positiveText}>+{formatCurrency(totalInflow)}</strong></span>
-                <span className={styles.dividerDot}></span>
-                <span>Retiro: <strong className={styles.negativeText}>-{formatCurrency(totalOutflow)}</strong></span>
-              </div>
-              <button 
-                className={styles.commitBtn}
-                onClick={handleValidateAndCommit}
-                disabled={isCommitting}
-              >
-                {isCommitting ? (
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
-                    <Loader2 size={16} className={styles.spin} />
-                    <span>Confirmando...</span>
-                  </div>
-                ) : (
-                  <span>Confirmar y Guardar Lote</span>
-                )}
-              </button>
+        {/* Bottom Pane: Parsed Preview Stream */}
+        {activeUploadFile && (
+          <section className={styles.entryPane}>
+            <div className={styles.paneHeader}>
+              <span className={`${styles.paneTitle} ${styles.primaryAccent}`}>
+                <Sparkles size={12} className={styles.paneTitleIcon} />
+                FLUJO DE VISTA PREVIA PROCESADA
+              </span>
             </div>
-          )}
-        </section>
+
+            <div className={styles.entryTableWrapper}>
+              {parsedBatch.length === 0 ? (
+                <div className={styles.emptyWorkspaceText}>
+                  {isProcessing ? 'Procesando captura visual...' : 'Esperando captura para extracción de metadatos...'}
+                </div>
+              ) : (
+                <table className={styles.entryTable}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: '120px' }}>Fecha</th>
+                      <th>Descripción</th>
+                      <th style={{ width: '140px' }}>Referencia</th>
+                      <th style={{ width: '180px' }}>Cliente Predicho / Asignado</th>
+                      <th style={{ width: '130px' }} className={styles.alignRight}>Monto</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parsedBatch.map((row) => (
+                      <tr key={row.id}>
+                        <td className={row.lowConfidence ? styles.lowConfidenceCell : ''}>
+                          {row.date}
+                          {row.lowConfidence && (
+                            <span className={styles.warningIcon} title="Confianza Baja (82%)">
+                              <AlertTriangle size={12} />
+                            </span>
+                          )}
+                        </td>
+                        <td className={styles.ledgerDesc} title={row.description}>{row.description}</td>
+                        <td>
+                          <span className={styles.monoText}>{row.reference}</span>
+                        </td>
+                        <td>
+                          <select
+                            className={styles.clientSelect}
+                            value={row.client_id || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setParsedBatch(prev =>
+                                prev.map(item =>
+                                  item.id === row.id ? { ...item, client_id: val } : item
+                                )
+                              );
+                            }}
+                          >
+                            <option value="">-- No asignado (Opex/Excepción) --</option>
+                            {clients.map(c => (
+                              <option key={c.id} value={c.id}>
+                                {c.legal_name || c.name}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className={`${styles.alignRight} ${row.amount >= 0 ? styles.positiveText : styles.negativeText} ${styles.monoText}`}>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                            <span>{row.amount >= 0 ? '+' : '-'}{formatCurrency(row.amount)}</span>
+                            {row.amount >= 0 && <CheckCircle2 size={12} className={styles.positiveText} />}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {parsedBatch.length > 0 && (
+              <div className={styles.entryFooter}>
+                <div className={styles.batchInfo}>
+                  <span>Lote: <strong>{parsedBatch.length} transacciones</strong></span>
+                  <span className={styles.dividerDot}></span>
+                  <span>Fondeo: <strong className={styles.positiveText}>+{formatCurrency(totalInflow)}</strong></span>
+                  <span className={styles.dividerDot}></span>
+                  <span>Retiro: <strong className={styles.negativeText}>-{formatCurrency(totalOutflow)}</strong></span>
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button 
+                    type="button"
+                    className={styles.cancelBtn}
+                    onClick={handleRemoveFile}
+                    disabled={isCommitting}
+                  >
+                    Descartar Lote
+                  </button>
+                  <button 
+                    className={styles.commitBtn}
+                    onClick={handleValidateAndCommit}
+                    disabled={isCommitting}
+                  >
+                    {isCommitting ? (
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                        <Loader2 size={16} className={styles.spin} />
+                        <span>Confirmando...</span>
+                      </div>
+                    ) : (
+                      <span>Confirmar y Guardar Lote</span>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
 
       </div>
 
@@ -826,7 +824,7 @@ export const BankManagement = () => {
                 paginatedTxs.map(tx => (
                   <tr key={tx.id} className={tx.is_reconciled ? '' : styles.pendingRow}>
                     <td className={styles.ledgerDate}>{tx.transaction_date}</td>
-                    <td className={styles.ledgerDesc}>{tx.description}</td>
+                    <td className={styles.ledgerDesc} title={tx.description}>{tx.description}</td>
                     <td className={`${styles.ledgerRef} ${styles.monoText}`}>{tx.reference_number || '-'}</td>
                     <td className={`${styles.ledgerAmount} ${styles.monoText} ${tx.amount >= 0 ? styles.positiveText : styles.negativeText}`}>
                       {tx.amount >= 0 ? '+' : '-'}

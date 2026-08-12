@@ -129,32 +129,31 @@
 /* Split Workspace layout */
 .splitWorkspace {
   display: flex;
-  height: 480px;
-  background-color: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  flex-direction: column;
+  gap: 24px;
+  background-color: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+  height: auto;
   margin-bottom: 24px;
-
-  @media (max-width: 1024px) {
-    flex-direction: column;
-    height: auto;
-    min-height: 600px;
-  }
 }
 
 .capturePane, .entryPane {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
   overflow: hidden;
+  width: 100% !important;
+  flex: none !important;
+}
 
-  @media (max-width: 1024px) {
-    height: 350px;
-    flex: none !important;
-    width: 100% !important;
-  }
+.entryPane {
+  height: 450px;
 }
 
 .paneHeader {
@@ -547,6 +546,10 @@
 .ledgerDesc {
   color: #0f172a;
   font-weight: 500;
+  max-width: 250px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ledgerRef {
@@ -879,8 +882,8 @@
   justify-content: center;
   text-align: center;
   height: 100%;
-  min-height: 380px;
-  padding: 24px;
+  min-height: 160px;
+  padding: 16px;
   color: #64748b;
   border: 2px dashed #cbd5e1;
   border-radius: 8px;
@@ -896,7 +899,7 @@
 
   .uploadIcon {
     color: #cbd5e1;
-    margin-bottom: 16px;
+    margin-bottom: 8px;
     transition: color 0.2s;
   }
 
@@ -908,13 +911,13 @@
     font-size: 14px;
     font-weight: 700;
     color: #0f172a;
-    margin: 0 0 6px;
+    margin: 0 0 4px;
   }
 
   p {
     font-size: 11px;
     line-height: 1.5;
-    max-width: 280px;
+    max-width: 320px;
     margin: 0;
   }
 }
@@ -926,29 +929,29 @@
   justify-content: center;
   text-align: center;
   height: 100%;
-  min-height: 380px;
+  min-height: 160px;
   background-color: #ffffff;
   border-radius: 8px;
   border: 1px dashed #cbd5e1;
-  padding: 24px;
+  padding: 16px;
   
   .loader {
     color: #10b981;
     animation: rotation 1.5s linear infinite;
-    margin-bottom: 16px;
+    margin-bottom: 12px;
   }
   
   h3 {
     font-size: 14px;
     font-weight: 700;
     color: #0f172a;
-    margin: 0 0 6px;
+    margin: 0 0 4px;
   }
 
   p {
     font-size: 11px;
     color: #64748b;
-    margin-bottom: 16px;
+    margin-bottom: 12px;
   }
 
   .progressContainer {
@@ -1079,62 +1082,85 @@
   background: #ffffff;
   border: 1px dashed #cbd5e1;
   border-radius: 12px;
-  padding: 32px;
+  padding: 20px 24px;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  justify-content: center;
-  text-align: center;
+  justify-content: space-between;
+  text-align: left;
   width: 100%;
-  max-width: 420px;
-  margin: 40px auto;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  max-width: none;
+  margin: 0;
+  box-shadow: none;
+  gap: 24px;
+
+  @media (max-width: 768px) {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+    gap: 16px;
+  }
 }
 
 .previewIconContainer {
   background: #f1f5f9;
   border-radius: 50%;
-  width: 100px;
-  height: 100px;
+  width: 56px;
+  height: 56px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 20px;
+  margin-bottom: 0;
+  flex-shrink: 0;
+
+  @media (max-width: 768px) {
+    margin: 0 auto;
+  }
 }
 
 .previewFileIcon {
   color: #10b981;
+  width: 28px;
+  height: 28px;
 }
 
 .previewInfo {
-  margin-bottom: 24px;
-  width: 100%;
+  margin-bottom: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .fileName {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
   color: #0f172a;
-  margin: 0 0 16px;
+  margin: 0;
   word-break: break-all;
   line-height: 1.4;
 }
 
 .metaGrid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 8px;
-  margin-bottom: 16px;
-  background: #f8fafc;
-  padding: 12px 16px;
-  border-radius: 8px;
-  border: 1px solid #f1f5f9;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 0;
+  background: transparent;
+  padding: 0;
+  border: none;
+
+  @media (max-width: 768px) {
+    justify-content: center;
+  }
 }
 
 .metaItem {
   display: flex;
-  justify-content: space-between;
-  font-size: 13px;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -1154,11 +1180,16 @@
   gap: 6px;
   background: #ecfdf5;
   color: #047857;
-  padding: 6px 14px;
+  padding: 4px 10px;
   border-radius: 20px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   border: 1px solid #d1fae5;
+  align-self: flex-start;
+
+  @media (max-width: 768px) {
+    align-self: center;
+  }
 }
 
 .badgeIcon {
@@ -1169,16 +1200,67 @@
   background: #0f172a;
   color: #ffffff;
   border: none;
-  padding: 10px 24px;
+  padding: 8px 16px;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
   transition: background-color 0.15s;
+  align-self: center;
+  white-space: nowrap;
 
   &:hover {
     background-color: #1e293b;
   }
 }
 
+.previewActions {
+  display: flex;
+  gap: 8px;
+  align-self: center;
+  flex-shrink: 0;
+
+  @media (max-width: 768px) {
+    align-self: stretch;
+    justify-content: center;
+  }
+}
+
+.removeFileButton {
+  background: transparent;
+  border: 1px solid #cbd5e1;
+  color: #64748b;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+  align-self: center;
+  white-space: nowrap;
+
+  &:hover {
+    background-color: #fee2e2;
+    border-color: #fca5a5;
+    color: #ef4444;
+  }
+}
+
+.cancelBtn {
+  background: transparent;
+  border: 1px solid #cbd5e1;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+
+  &:hover {
+    background-color: #f1f5f9;
+    color: #0f172a;
+  }
+}
 
