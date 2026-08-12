@@ -90,7 +90,7 @@ export const BankManagement = () => {
 
   // Historical ledger state
   const [ledgerPage, setLedgerPage] = useState<number>(1);
-  const itemsPerPage = 8;
+  const itemsPerPage = 10;
 
   // Fetch companies and clients initially
   useEffect(() => {

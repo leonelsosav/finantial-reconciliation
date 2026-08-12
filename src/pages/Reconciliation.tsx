@@ -36,7 +36,7 @@ export const Reconciliation = () => {
   
   // Pagination State
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const itemsPerPage = 8;
+  const itemsPerPage = 10;
 
   // Operations
   const [isProcessing, setIsProcessing] = useState(false);
