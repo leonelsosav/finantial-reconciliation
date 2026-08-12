@@ -216,10 +216,6 @@ export const BankManagement = () => {
         const x = item.transform[4];
         const y = item.transform[5];
         
-        if (item.str && item.str.includes('$')) {
-          console.log(`[DEBUG] browser money item: "${item.str}" | X: ${x.toFixed(2)} | Y: ${y.toFixed(2)}`);
-        }
-        
         let foundLine = lines.find(l => Math.abs(l.y - y) < 7.0);
         if (!foundLine) {
           foundLine = { y, items: [] };
