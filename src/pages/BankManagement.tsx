@@ -6,21 +6,18 @@ import { supabase } from '../lib/supabase';
 import { DateEngine } from '../utils/DateEngine';
 import { ModalAlert } from '../components/ModalAlert';
 import type { BankTransaction, InternalCompany, Client } from '../types';
-import { OcrService } from '../services/ocr.service';
-import type { BankType } from '../services/ocr.service';
+import { StatementParserService } from '../services/statementParser.service';
+export type BankType = 'Banorte' | 'BBVA' | 'STP' | 'Convenia' | 'Inbursa';
 import { ReconciliationService } from '../services/reconciliation.service';
 import { 
   Lock, 
   AlertTriangle, 
   Loader2, 
-  FileImage,
+  FileText,
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
-  Sparkles,
-  ZoomIn,
-  ZoomOut,
-  RotateCcw
+  Sparkles
 } from 'lucide-react';
 import styles from './BankManagement.module.scss';
 
@@ -52,7 +49,6 @@ export const BankManagement = () => {
 
   // OCR/Screenshot states
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [captureUrl, setCaptureUrl] = useState<string | null>(null);
   const [activeUploadFile, setActiveUploadFile] = useState<string | null>(null);
   const [systemPayloadId, setSystemPayloadId] = useState<string>('');
   const [isDragActive, setIsDragActive] = useState<boolean>(false);
@@ -90,19 +86,8 @@ export const BankManagement = () => {
 
   // Parsed grid state
   const [parsedBatch, setParsedBatch] = useState<ParsedTransaction[]>([]);
-  const [zoomLevel, setZoomLevel] = useState<number>(100);
-
-  const handleZoomIn = () => {
-    setZoomLevel(prev => Math.min(prev + 25, 300));
-  };
-
-  const handleZoomOut = () => {
-    setZoomLevel(prev => Math.max(prev - 25, 50));
-  };
-
-  const handleZoomReset = () => {
-    setZoomLevel(100);
-  };
+  const [pdfPageCount, setPdfPageCount] = useState<number | null>(null);
+  const [fileSize, setFileSize] = useState<string | null>(null);
 
   // Historical ledger state
   const [ledgerPage, setLedgerPage] = useState<number>(1);
@@ -137,11 +122,11 @@ export const BankManagement = () => {
   useEffect(() => {
     loadTransactions();
     // Clear states when company switches
-    setCaptureUrl(null);
     setActiveUploadFile(null);
     setSystemPayloadId('');
     setParsedBatch([]);
-    setZoomLevel(100);
+    setPdfPageCount(null);
+    setFileSize(null);
   }, [selectedCompanyId]);
 
   // Draggable Pane Handlers
@@ -192,8 +177,113 @@ export const BankManagement = () => {
     setIsDragActive(false);
   };
 
+  // Load PDF.js dynamically from CDN to parse PDF statements
+  const loadPdfJs = (): Promise<any> => {
+    return new Promise((resolve, reject) => {
+      if ((window as any).pdfjsLib) {
+        resolve((window as any).pdfjsLib);
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js';
+      script.onload = () => {
+        const pdfjsLib = (window as any).pdfjsLib;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+        resolve(pdfjsLib);
+      };
+      script.onerror = () => reject(new Error('No se pudo cargar la librería PDF.js de Cloudflare CDN.'));
+      document.head.appendChild(script);
+    });
+  };
+
+  const extractTextFromPdf = async (file: File, onProgress: (pct: number) => void): Promise<{ text: string; pages: number }> => {
+    const pdfjsLib = await loadPdfJs();
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = '';
+    
+    for (let i = 1; i <= pdf.numPages; i++) {
+      onProgress(Math.round((i / pdf.numPages) * 100));
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      
+      // Group items by Y coordinate (tolerance of 3.0 pt for row alignments)
+      const items = textContent.items as any[];
+      const lines: { y: number; items: any[] }[] = [];
+      
+      for (const item of items) {
+        if (!item.str || item.str.trim() === '') continue;
+        
+        const x = item.transform[4];
+        const y = item.transform[5];
+        
+        let foundLine = lines.find(l => Math.abs(l.y - y) < 3.0);
+        if (!foundLine) {
+          foundLine = { y, items: [] };
+          lines.push(foundLine);
+        }
+        foundLine.items.push({ x, width: item.width || 0, str: item.str });
+      }
+      
+      // Sort lines descending (from top of page to bottom)
+      lines.sort((a, b) => b.y - a.y);
+      
+      let pageText = '';
+      for (const line of lines) {
+        // Sort items left-to-right (ascending X coordinate)
+        line.items.sort((a, b) => a.x - b.x);
+        
+        let lineStr = '';
+        for (let k = 0; k < line.items.length; k++) {
+          const item = line.items[k];
+          if (k > 0) {
+            const prev = line.items[k - 1];
+            const gap = item.x - (prev.x + prev.width);
+            
+            if (gap > 20.0) {
+              // Large horizontal gap indicates different columns: insert tab
+              lineStr += '\t';
+            } else if (gap > 3.0) {
+              // Standard word separation
+              lineStr += ' ';
+            } else {
+              // Tiny gap: check if boundary spacing is missing
+              if (gap > 1.0 && !prev.str.endsWith(' ') && !item.str.startsWith(' ')) {
+                lineStr += ' ';
+              }
+            }
+          }
+          lineStr += item.str;
+        }
+        pageText += lineStr + '\n';
+      }
+      
+      fullText += pageText + '\n';
+    }
+    return { text: fullText, pages: pdf.numPages };
+  };
+
+  const extractTextFromCsv = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error('No se pudo leer el archivo CSV.'));
+      reader.readAsText(file, 'utf-8');
+    });
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
   const processRealOCR = async (file: File) => {
     setActiveUploadFile(file.name);
+    setFileSize(formatFileSize(file.size));
+    setPdfPageCount(null);
 
     const randomNum = Math.floor(Math.random() * 900) + 100;
     const alphaSuffix = ['ALPHA', 'BETA', 'GAMMA', 'DELTA'][Math.floor(Math.random() * 4)];
@@ -202,24 +292,53 @@ export const BankManagement = () => {
     setIsProcessing(true);
     setProcessingProgress(0);
     setParsedBatch([]);
-    setZoomLevel(100);
 
     try {
-      const transactions = await OcrService.processScreenshot(
-        file,
-        (pct) => {
+      let parsedTransactions: ParsedTransaction[] = [];
+
+      if (selectedBank === 'STP') {
+        if (!file.name.toLowerCase().endsWith('.csv')) {
+          throw new Error('Para STP debe subir un archivo de formato CSV (.csv).');
+        }
+        const csvText = await extractTextFromCsv(file);
+        parsedTransactions = StatementParserService.parseSTP(csvText);
+      } else {
+        if (!file.name.toLowerCase().endsWith('.pdf')) {
+          throw new Error(`Para ${selectedBank} debe subir un archivo de formato PDF (.pdf).`);
+        }
+        const { text, pages } = await extractTextFromPdf(file, (pct) => {
           setProcessingProgress(pct);
-        },
-        selectedBank
-      );
-      setParsedBatch(transactions);
+        });
+        setPdfPageCount(pages);
+
+        // Run specific parser
+        switch (selectedBank) {
+          case 'Banorte':
+            parsedTransactions = StatementParserService.parseBanorte(text);
+            break;
+          case 'BBVA':
+            parsedTransactions = StatementParserService.parseBBVA(text);
+            break;
+          case 'Convenia':
+            parsedTransactions = StatementParserService.parseConvenia(text);
+            break;
+          case 'Inbursa':
+            parsedTransactions = StatementParserService.parseInbursa(text);
+            break;
+          default:
+            throw new Error(`Banco no soportado: ${selectedBank}`);
+        }
+      }
+
+      setParsedBatch(parsedTransactions);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Error desconocido';
-      console.error('[BankManagement] OCR failed:', message);
-      showAlert('error', 'Error de OCR', `No se pudo extraer la información de la captura: ${message}`);
-      setCaptureUrl(null);
+      console.error('[BankManagement] Ingestion failed:', message);
+      showAlert('error', 'Error de Procesamiento', `No se pudo extraer la información del estado de cuenta: ${message}`);
       setActiveUploadFile(null);
       setSystemPayloadId('');
+      setPdfPageCount(null);
+      setFileSize(null);
     } finally {
       setIsProcessing(false);
     }
@@ -231,7 +350,6 @@ export const BankManagement = () => {
 
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0];
-      setCaptureUrl(URL.createObjectURL(file));
       processRealOCR(file);
     }
   };
@@ -239,7 +357,6 @@ export const BankManagement = () => {
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      setCaptureUrl(URL.createObjectURL(file));
       processRealOCR(file);
     }
   };
@@ -317,9 +434,10 @@ export const BankManagement = () => {
       
       // Clean workspace
       setParsedBatch([]);
-      setCaptureUrl(null);
       setActiveUploadFile(null);
       setSystemPayloadId('');
+      setPdfPageCount(null);
+      setFileSize(null);
       loadTransactions();
     } catch (err: any) {
       console.error('Error committing transactions:', err);
@@ -411,7 +529,7 @@ export const BankManagement = () => {
             type="file" 
             ref={fileInputRef} 
             onChange={handleFileInput} 
-            accept="image/*" 
+            accept={selectedBank === 'STP' ? '.csv' : '.pdf'} 
             className={styles.hiddenInput} 
           />
         </div>
@@ -439,8 +557,8 @@ export const BankManagement = () => {
             {isProcessing ? (
               <div className={styles.processingOverlay}>
                 <Loader2 size={36} className={styles.loader} />
-                <h3>Procesando OCR Vision Engine</h3>
-                <p>Extrayendo metadatos de la captura bancaria...</p>
+                <h3>Procesando Estado de Cuenta</h3>
+                <p>Extrayendo metadatos del documento bancario...</p>
                 <div className={styles.progressContainer}>
                   <div 
                     className={styles.progressBar} 
@@ -448,43 +566,41 @@ export const BankManagement = () => {
                   />
                 </div>
               </div>
-            ) : captureUrl ? (
-              <div className={styles.imageContainer}>
-                <img 
-                  src={captureUrl} 
-                  alt="Captura bancaria" 
-                  className={styles.captureImageTag}
-                  style={{ width: `${zoomLevel}%` }}
-                />
-                <div className={styles.zoomControls}>
-                  <button 
-                    type="button"
-                    onClick={handleZoomOut} 
-                    disabled={zoomLevel <= 50}
-                    className={styles.zoomBtn}
-                    title="Alejar"
-                  >
-                    <ZoomOut size={14} />
-                  </button>
-                  <span className={styles.zoomPercentage}>{zoomLevel}%</span>
-                  <button 
-                    type="button"
-                    onClick={handleZoomIn} 
-                    disabled={zoomLevel >= 300}
-                    className={styles.zoomBtn}
-                    title="Acercar"
-                  >
-                    <ZoomIn size={14} />
-                  </button>
-                  <button 
-                    type="button"
-                    onClick={handleZoomReset} 
-                    className={styles.zoomBtn}
-                    title="Restablecer"
-                  >
-                    <RotateCcw size={14} />
-                  </button>
+            ) : activeUploadFile ? (
+              <div className={styles.filePreviewCard}>
+                <div className={styles.previewIconContainer}>
+                  <FileText size={64} className={styles.previewFileIcon} />
                 </div>
+                <div className={styles.previewInfo}>
+                  <h4 className={styles.fileName}>{activeUploadFile}</h4>
+                  <div className={styles.metaGrid}>
+                    <div className={styles.metaItem}>
+                      <span className={styles.metaLabel}>Tamaño:</span>
+                      <span className={styles.metaValue}>{fileSize || 'Desconocido'}</span>
+                    </div>
+                    <div className={styles.metaItem}>
+                      <span className={styles.metaLabel}>Banco:</span>
+                      <span className={styles.metaValue}>{selectedBank}</span>
+                    </div>
+                    {pdfPageCount !== null && (
+                      <div className={styles.metaItem}>
+                        <span className={styles.metaLabel}>Páginas:</span>
+                        <span className={styles.metaValue}>{pdfPageCount}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className={styles.statusBadge}>
+                    <CheckCircle2 size={14} className={styles.badgeIcon} />
+                    Documento Leído Exitosamente
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className={styles.changeFileButton}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  Cambiar Archivo
+                </button>
               </div>
             ) : (
               <div 
@@ -494,9 +610,9 @@ export const BankManagement = () => {
                 onDrop={handleDrop}
                 onClick={() => fileInputRef.current?.click()}
               >
-                <FileImage size={48} className={styles.uploadIcon} />
-                <h3>Arrastre y suelte su captura de pantalla aquí</h3>
-                <p>O haga clic para examinar archivos. Se procesarán y auto-completarán los registros mediante OCR local.</p>
+                <FileText size={48} className={styles.uploadIcon} />
+                <h3>Arrastre y suelte su archivo aquí</h3>
+                <p>O haga clic para examinar archivos. Formatos aceptados: PDF (Banorte, BBVA, Convenia, Inbursa) y CSV (STP).</p>
               </div>
             )}
           </div>
