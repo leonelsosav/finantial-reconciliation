@@ -221,7 +221,19 @@ export const BankManagement = () => {
           foundLine = { y, items: [] };
           lines.push(foundLine);
         }
-        foundLine.items.push({ x, width: item.width || 0, str: item.str });
+        
+        let str = item.str;
+        if (bank === 'Inbursa' && str.includes('$')) {
+          if (x <= 460) {
+            str = '-' + str;
+          } else if (x <= 530) {
+            str = '+' + str;
+          } else {
+            str = '[S]' + str;
+          }
+        }
+        
+        foundLine.items.push({ x, width: item.width || 0, str });
       }
       
       // Sort lines descending (from top of page to bottom)
@@ -247,6 +259,27 @@ export const BankManagement = () => {
               cols[colIndex] += ' ' + item.str;
             } else {
               cols[colIndex] = item.str;
+            }
+          }
+          lineStr = cols.join('\t');
+        } else if (bank === 'Convenia') {
+          // Strict 7-column boundary mapping for Convenia
+          const cols = ['', '', '', '', '', '', ''];
+          line.items.sort((a, b) => a.x - b.x);
+          
+          for (const item of line.items) {
+            let colIdx = 6;
+            if (item.x < 60) colIdx = 0;
+            else if (item.x < 133) colIdx = 1;
+            else if (item.x < 280) colIdx = 2;
+            else if (item.x < 380) colIdx = 3;
+            else if (item.x < 430) colIdx = 4;
+            else if (item.x < 500) colIdx = 5;
+
+            if (cols[colIdx]) {
+              cols[colIdx] += ' ' + item.str;
+            } else {
+              cols[colIdx] = item.str;
             }
           }
           lineStr = cols.join('\t');

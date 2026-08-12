@@ -263,70 +263,96 @@ export class StatementParserService {
       'julio': '07', 'agosto': '08', 'septiembre': '09', 'octubre': '10', 'noviembre': '11', 'diciembre': '12'
     };
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
+    const parseMoney = (str: string) => parseFloat(str.replace(/[^0-9.-]/g, '')) || 0;
+    
+    const isNoise = (str: string) => {
+      const s = str.toUpperCase();
+      return s.includes('EL EQUIPO DE CONVENIA') || s.includes('DERECHOS RESERVADOS') || s.includes('PÁGINA') || s.includes('PAGINA');
+    };
 
-      // Check if line contains exactly three money values (e.g. $0.00 $9,875.00 $9,875.00)
-      const moneyMatch = line.match(/^(\$?[0-9,.-]+)\s+(\$?[0-9,.-]+)\s+(\$?[0-9,.-]+)$/);
-      if (moneyMatch && line.includes('$')) {
-        const cargo = this.parseMoney(moneyMatch[1]);
-        const abono = this.parseMoney(moneyMatch[2]);
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line.trim()) continue;
+
+      const parts = line.split('\t');
+      if (parts.length < 7) continue;
+
+      const col0 = parts[0].trim(); // Date
+      const col4 = parts[4].trim(); // Cargo
+      const col5 = parts[5].trim(); // Abono
+      const col6 = parts[6].trim(); // Saldo
+
+      const dateStartMatch = col0.match(/^(\d{1,2})\s+de\s+([a-zA-ZñÑáéíóúÁÉÍÓÚ]+)\s+de/);
+      const hasMoney = (col4 && col4.includes('$')) || (col5 && col5.includes('$'));
+
+      if (dateStartMatch && hasMoney) {
+        const day = dateStartMatch[1];
+        const monthName = dateStartMatch[2].toLowerCase();
+        const month = monthMap[monthName] || '07';
+        
+        const cargo = parseMoney(col4);
+        const abono = parseMoney(col5);
         const amount = cargo > 0 ? -cargo : abono;
 
-        // Scan backwards to build date, reference, and description
-        let dateStr = '';
-        let yearStr = '';
-        
-        for (let j = i - 1; j >= 0; j--) {
-          const prevLine = lines[j].trim();
-          if (!prevLine) continue;
+        const dateParts = [col0];
+        const descParts = [parts[1].trim(), parts[2].trim()];
+        const refParts = [parts[3].trim()];
 
-          // Check if it's the date line (e.g. "31 de julio de")
-          const dateLineMatch = prevLine.match(/^(\d{1,2})\s+de\s+([a-z]+)\s+de$/i);
-          if (dateLineMatch) {
-            dateStr = dateLineMatch[1];
-            const monthName = dateLineMatch[2].toLowerCase();
-            const month = monthMap[monthName] || '07';
-            
-            // The next line in natural order was the year (which is lines[j+1])
-            yearStr = lines[j+1]?.trim() || '2026';
-            
-            // Build formatted date
-            const formattedDate = `${yearStr}-${month}-${dateStr.padStart(2, '0')}`;
-            
-            // Collected text between year line and money line
-            const detailLines = [];
-            for (let k = j + 2; k < i; k++) {
-              detailLines.push(lines[k].trim());
-            }
-            
-            const fullDetails = detailLines.join(' ');
-            
-            // Extract UUID as reference (formatted with dashes)
-            // Convenia UUIDs are split across lines, e.g. "0ade823d- \n d852-4459-aa99- \n fa2dec7a8eea"
-            const uuidMatch = fullDetails.replace(/\s+/g, '').match(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i);
-            const reference = uuidMatch ? uuidMatch[0] : '';
-            
-            // Clean description by removing the UUID parts
-            let description = fullDetails
-              .replace(/[a-f0-9]{8}-\s*/i, '')
-              .replace(/[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-\s*/i, '')
-              .replace(/[a-f0-9]{12}/i, '')
-              .replace(/\s+/g, ' ')
-              .trim();
+        let j = i + 1;
+        while (j < lines.length) {
+          const nextLine = lines[j];
+          if (!nextLine.trim()) {
+            j++;
+            continue;
+          }
 
-            transactions.push({
-              id: `convenia-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-              date: formattedDate,
-              description,
-              reference,
-              amount,
-              lowConfidence: false
-            });
+          const nextParts = nextLine.split('\t');
+          if (nextParts.length < 7) {
+            j++;
+            continue;
+          }
+
+          const nextCol0 = nextParts[0].trim();
+          const nextCol4 = nextParts[4].trim();
+          const nextCol5 = nextParts[5].trim();
+
+          const nextDateMatch = nextCol0.match(/^(\d{1,2})\s+de\s+([a-zA-ZñÑáéíóúÁÉÍÓÚ]+)\s+de/);
+          const nextHasMoney = (nextCol4 && nextCol4.includes('$')) || (nextCol5 && nextCol5.includes('$'));
+          if (nextDateMatch && nextHasMoney) {
+            break;
+          }
+
+          if (nextCol0 && !isNoise(nextCol0)) dateParts.push(nextCol0);
+          if (nextParts[1].trim() && !isNoise(nextParts[1])) descParts.push(nextParts[1].trim());
+          if (nextParts[2].trim() && !isNoise(nextParts[2])) descParts.push(nextParts[2].trim());
+          if (nextParts[3].trim() && !isNoise(nextParts[3])) refParts.push(nextParts[3].trim());
+
+          j++;
+        }
+
+        i = j - 1;
+
+        let year = '2026';
+        for (const d of dateParts) {
+          const yearMatch = d.match(/^(\d{4})\b/);
+          if (yearMatch) {
+            year = yearMatch[1];
             break;
           }
         }
+
+        const formattedDate = `${year}-${month}-${day.padStart(2, '0')}`;
+        const reference = refParts.join('').replace(/\s+/g, '');
+        const description = descParts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+
+        transactions.push({
+          id: `convenia-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          date: formattedDate,
+          description,
+          reference,
+          amount,
+          lowConfidence: false
+        });
       }
     }
 
@@ -347,7 +373,6 @@ export class StatementParserService {
       const line = lines[i].trim();
       if (!line) continue;
 
-      // Inbursa transaction starts with date format DD/MM/YYYY and Reference
       const startMatch = line.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\S+)/);
       if (startMatch) {
         if (currentTx) {
@@ -355,7 +380,8 @@ export class StatementParserService {
         }
 
         const dateParts = [startMatch[1], startMatch[2], startMatch[3]];
-        const formattedDate = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
+        // dateParts[0] is month (07), dateParts[1] is day (03/31), dateParts[2] is year (2026)
+        const formattedDate = `${dateParts[2]}-${dateParts[0]}-${dateParts[1]}`;
         const reference = startMatch[4];
 
         currentTx = {
@@ -368,9 +394,8 @@ export class StatementParserService {
           completedAmount: false
         };
 
-        // Check if money values are on the same line
         const parts = line.split(/\s+/).map(x => x.trim()).filter(Boolean);
-        const moneyParts = parts.filter(p => /^\$[0-9,.-]+$/.test(p));
+        const moneyParts = parts.filter(p => /^[+-]?(\[S\])?\$[0-9,.-]+$/.test(p));
 
         if (moneyParts.length >= 2) {
           currentTx.amount = parseMoney(moneyParts[0]);
@@ -383,7 +408,7 @@ export class StatementParserService {
       } else if (currentTx) {
         if (!currentTx.completedAmount) {
           const parts = line.split(/\s+/).map(x => x.trim()).filter(Boolean);
-          const moneyParts = parts.filter(p => /^\$[0-9,.-]+$/.test(p));
+          const moneyParts = parts.filter(p => /^[+-]?(\[S\])?\$[0-9,.-]+$/.test(p));
 
           if (moneyParts.length >= 2) {
             currentTx.amount = parseMoney(moneyParts[0]);
@@ -408,22 +433,14 @@ export class StatementParserService {
       transactions.push(currentTx);
     }
 
-    // Resolve signs based on keywords and filter out non-transaction header/footer records
     return transactions
       .filter(tx => tx.reference !== 'SALDO' && !tx.description.includes('SALDO INICIAL'))
       .map(tx => {
-        const desc = tx.description.toUpperCase();
-        let isDeposit = false;
-        if (desc.includes('DEPOSITO') || desc.includes('ABONO') || desc.includes('SPEI RECIBIDO') || desc.includes('MAS')) {
-          isDeposit = true;
-        } else if (desc.includes('TRASPASO') || desc.includes('COMISION') || desc.includes('IVA') || desc.includes('CARGO') || desc.includes('RETIRO')) {
-          isDeposit = false;
-        }
         return {
           id: tx.id,
           date: tx.date,
           reference: tx.reference,
-          amount: isDeposit ? Math.abs(tx.amount) : -Math.abs(tx.amount),
+          amount: tx.amount,
           lowConfidence: tx.lowConfidence,
           description: tx.description.replace(/\s+/g, ' ').trim()
         };
