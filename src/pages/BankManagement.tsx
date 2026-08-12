@@ -35,7 +35,7 @@ interface ParsedTransaction {
 
 export const BankManagement = () => {
   const { profile } = useAuth();
-  const { startDate, endDate } = usePeriod();
+  const { startDate, endDate, setSelectedMonth } = usePeriod();
   const navigate = useNavigate();
 
   // Role wall: accessible to owner and auditor
@@ -48,7 +48,7 @@ export const BankManagement = () => {
 
   // Account / Company filter context
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
-  const [selectedBank, setSelectedBank] = useState<BankType>('Banorte');
+  const [selectedBank, setSelectedBank] = useState<BankType | ''>('');
 
   // OCR/Screenshot states
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -313,6 +313,11 @@ export const BankManagement = () => {
   };
 
   const processRealOCR = async (file: File) => {
+    if (!selectedCompanyId || !selectedBank) {
+      showAlert('error', 'Selección Requerida', 'Debe seleccionar una cuenta de empresa y un banco antes de subir archivos.');
+      return;
+    }
+
     setActiveUploadFile(file.name);
     setFileSize(formatFileSize(file.size));
     setPdfPageCount(null);
@@ -510,12 +515,23 @@ export const BankManagement = () => {
 
       showAlert('success', 'Ingestión Exitosa', `Se han ingestado y procesado ${parsedBatch.length} registros bancarios exitosamente.`);
       
+      // Shift period to the month of the transactions uploaded
+      if (parsedBatch.length > 0) {
+        const parsedDate = parseDateInput(parsedBatch[0].date); // YYYY-MM-DD
+        const dateParts = parsedDate.split('-');
+        if (dateParts.length >= 2) {
+          setSelectedMonth(`${dateParts[0]}-${dateParts[1]}`);
+        }
+      }
+
       // Clean workspace
       setParsedBatch([]);
       setActiveUploadFile(null);
       setSystemPayloadId('');
       setPdfPageCount(null);
       setFileSize(null);
+      setSelectedCompanyId('');
+      setSelectedBank('');
       loadTransactions();
     } catch (err: any) {
       console.error('Error committing transactions:', err);
@@ -592,9 +608,10 @@ export const BankManagement = () => {
           <div className={styles.selectWrapper}>
             <select 
               value={selectedBank} 
-              onChange={e => setSelectedBank(e.target.value as BankType)}
+              onChange={e => setSelectedBank(e.target.value as BankType | '')}
               className={styles.bankSelect}
             >
+              <option value="">Seleccionar Banco...</option>
               <option value="Banorte">Banorte</option>
               <option value="BBVA">BBVA</option>
               <option value="STP">STP</option>
@@ -608,6 +625,7 @@ export const BankManagement = () => {
             ref={fileInputRef} 
             onChange={handleFileInput} 
             accept={selectedBank === 'STP' ? '.csv' : '.pdf'} 
+            disabled={!selectedCompanyId || !selectedBank}
             className={styles.hiddenInput} 
           />
         </div>
@@ -688,15 +706,23 @@ export const BankManagement = () => {
               </div>
             ) : (
               <div 
-                className={`${styles.dropZone} ${isDragActive ? styles.dragActive : ''}`}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
+                className={`${styles.dropZone} ${isDragActive ? styles.dragActive : ''} ${(!selectedCompanyId || !selectedBank) ? styles.disabledDropZone : ''}`}
+                onDragOver={(!selectedCompanyId || !selectedBank) ? undefined : handleDragOver}
+                onDragLeave={(!selectedCompanyId || !selectedBank) ? undefined : handleDragLeave}
+                onDrop={(!selectedCompanyId || !selectedBank) ? undefined : handleDrop}
+                onClick={(!selectedCompanyId || !selectedBank) ? undefined : () => fileInputRef.current?.click()}
               >
                 <FileText size={48} className={styles.uploadIcon} />
-                <h3>Arrastre y suelte su archivo aquí</h3>
-                <p>O haga clic para examinar archivos. Formatos aceptados: PDF (Banorte, BBVA, Convenia, Inbursa) y CSV (STP).</p>
+                <h3>
+                  {!selectedCompanyId || !selectedBank 
+                    ? 'Carga Bloqueada' 
+                    : 'Arrastre y suelte su archivo aquí'}
+                </h3>
+                <p>
+                  {!selectedCompanyId || !selectedBank 
+                    ? 'Seleccione una cuenta de empresa y un banco arriba para habilitar la carga de archivos.' 
+                    : `O haga clic para examinar archivos. Formatos aceptados: ${selectedBank === 'STP' ? 'CSV (.csv)' : 'PDF (.pdf)'}.`}
+                </p>
               </div>
             )}
           </div>
