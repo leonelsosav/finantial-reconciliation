@@ -32,6 +32,7 @@ export const Reconciliation = () => {
   const [selectedException, setSelectedException] = useState<BankTransaction | null>(null);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>('');
   const [showAllInvoices, setShowAllInvoices] = useState<boolean>(false);
+  const [forceAdjustmentComment, setForceAdjustmentComment] = useState<string>('');
   
   // Pagination State
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -195,6 +196,7 @@ export const Reconciliation = () => {
     setSelectedException(tx);
     setSelectedInvoiceId('');
     setShowAllInvoices(false);
+    setForceAdjustmentComment('');
   };
 
   const handleCloseDrawer = () => {
@@ -205,12 +207,20 @@ export const Reconciliation = () => {
   // 1. Force Direct Adjustment (Ajuste Directo)
   const handleForceAdjustment = async () => {
     if (!selectedException) return;
+    if (!forceAdjustmentComment.trim()) {
+      alert('Por favor ingrese una descripción/concepto para el ajuste forzado.');
+      return;
+    }
+
     setIsProcessing(true);
     try {
-      // Bypasses matching: sets category to corporate_opex and is_reconciled = true
+      const finalDescription = `${forceAdjustmentComment.trim()}${selectedException.description ? ` (${selectedException.description})` : ''}`;
+
+      // Bypasses matching: sets category to corporate_opex, description, and is_reconciled = true
       await updateBank(selectedException.id, {
         transaction_category: 'corporate_opex',
-        is_reconciled: true
+        is_reconciled: true,
+        description: finalDescription
       });
 
       alert('Ajuste Directo Exitoso: Transacción clasificada como Gasto Corporativo y conciliada.');
@@ -460,10 +470,21 @@ export const Reconciliation = () => {
               <div className={styles.adjustmentBlock}>
                 <h3>1. Ajuste Directo Forzado</h3>
                 <p>Clasifique esta partida como un gasto contable ordinario o egreso sin comprobante fiscal de nómina (ej. tarifas bancarias).</p>
+                <div className={styles.inputGroup}>
+                  <label htmlFor="forceComment">Descripción/Concepto del Gasto (Requerido)</label>
+                  <textarea
+                    id="forceComment"
+                    rows={2}
+                    value={forceAdjustmentComment}
+                    onChange={e => setForceAdjustmentComment(e.target.value)}
+                    placeholder="Ej. Pago de servicio de comida de la oficina, tarifa de mantenimiento mensual..."
+                    className={styles.commentInput}
+                  />
+                </div>
                 <button 
                   className={styles.actionBtn}
                   onClick={handleForceAdjustment}
-                  disabled={isProcessing}
+                  disabled={isProcessing || !forceAdjustmentComment.trim()}
                 >
                   {isProcessing ? <Loader2 className={styles.spin} size={14} /> : 'Ajuste Directo (Opex)'}
                 </button>
