@@ -388,6 +388,10 @@
 .entityName {
   font-weight: 700;
   color: #0f172a;
+  max-width: 250px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .entitySub {

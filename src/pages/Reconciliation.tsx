@@ -303,7 +303,7 @@ export const Reconciliation = () => {
                       </span>
                     </td>
                     <td>
-                      <div className={styles.entityName}>{exc.description}</div>
+                      <div className={styles.entityName} title={exc.description}>{exc.description}</div>
                       <span className={styles.entitySub}>
                         {exc.exceptionDetail === 'Payment received without XML linkage' 
                           ? 'Pago recibido sin vínculo XML'
