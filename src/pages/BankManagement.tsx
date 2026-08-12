@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useDatabase } from '../hooks/useDatabase';
+import { usePeriod } from '../context/PeriodContext';
 import { supabase } from '../lib/supabase';
 import { DateEngine } from '../utils/DateEngine';
 import { ModalAlert } from '../components/ModalAlert';
@@ -34,6 +35,7 @@ interface ParsedTransaction {
 
 export const BankManagement = () => {
   const { profile } = useAuth();
+  const { startDate, endDate } = usePeriod();
   const navigate = useNavigate();
 
   // Role wall: accessible to owner and auditor
@@ -112,7 +114,11 @@ export const BankManagement = () => {
   const loadTransactions = () => {
     if (selectedCompanyId) {
       fetchTransactions({
-        filters: [{ column: 'internal_company_id', operator: 'eq', value: selectedCompanyId }],
+        filters: [
+          { column: 'internal_company_id', operator: 'eq', value: selectedCompanyId },
+          { column: 'transaction_date', operator: 'gte', value: startDate },
+          { column: 'transaction_date', operator: 'lte', value: endDate }
+        ],
         sort: { column: 'transaction_date', direction: 'desc' }
       });
     }
@@ -126,7 +132,7 @@ export const BankManagement = () => {
     setParsedBatch([]);
     setPdfPageCount(null);
     setFileSize(null);
-  }, [selectedCompanyId]);
+  }, [selectedCompanyId, startDate, endDate]);
 
 
 
@@ -410,16 +416,49 @@ export const BankManagement = () => {
   }, [parsedBatch]);
 
   const parseDateInput = (str: string): string => {
+    if (!str) return DateEngine.getLocalYYYYMMDD(new Date());
+    
+    // If already YYYY-MM-DD (e.g. 2026-07-15)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+      return str;
+    }
+    
+    // If YYYY-MM-DD with timestamp
+    if (/^\d{4}-\d{2}-\d{2}\s/.test(str)) {
+      return str.split(' ')[0];
+    }
+
     const parts = str.split('/');
     if (parts.length === 3) {
-      const day = parts[0].padStart(2, '0');
-      const month = parts[1].padStart(2, '0');
-      let year = parts[2];
+      if (parts[0].length === 4) {
+        // YYYY/MM/DD
+        const year = parts[0];
+        const month = parts[1].padStart(2, '0');
+        const day = parts[2].padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      } else {
+        // DD/MM/YYYY
+        const day = parts[0].padStart(2, '0');
+        const month = parts[1].padStart(2, '0');
+        let year = parts[2];
+        if (year.length === 2) {
+          year = '20' + year;
+        }
+        return `${year}-${month}-${day}`;
+      }
+    }
+
+    const hyphenParts = str.split('-');
+    if (hyphenParts.length === 3 && hyphenParts[0].length !== 4) {
+      const day = hyphenParts[0].padStart(2, '0');
+      const month = hyphenParts[1].padStart(2, '0');
+      let year = hyphenParts[2];
       if (year.length === 2) {
         year = '20' + year;
       }
       return `${year}-${month}-${day}`;
     }
+
     return DateEngine.getLocalYYYYMMDD(new Date());
   };
 

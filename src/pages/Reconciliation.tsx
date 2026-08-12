@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useDatabase } from '../hooks/useDatabase';
+import { usePeriod } from '../context/PeriodContext';
 import { supabase } from '../lib/supabase';
 import { DateEngine } from '../utils/DateEngine';
 import type { BankTransaction, BillingRecord, Client } from '../types';
@@ -18,6 +19,7 @@ import styles from './Reconciliation.module.scss';
 
 export const Reconciliation = () => {
   const { profile } = useAuth();
+  const { startDate, endDate } = usePeriod();
   const navigate = useNavigate();
 
   // Role wall: accessible to owner and auditor
@@ -41,28 +43,30 @@ export const Reconciliation = () => {
   // Operations
   const [isProcessing, setIsProcessing] = useState(false);
 
+  const loadUnreconciledData = () => {
+    fetchBank({
+      filters: [
+        { column: 'transaction_date', operator: 'gte', value: startDate },
+        { column: 'transaction_date', operator: 'lte', value: endDate }
+      ],
+      sort: { column: 'transaction_date', direction: 'desc' }
+    });
+    fetchBilling({
+      filters: [
+        { column: 'is_reconciled', operator: 'eq', value: false },
+        { column: 'operation_date', operator: 'gte', value: startDate },
+        { column: 'operation_date', operator: 'lte', value: endDate }
+      ],
+      sort: { column: 'created_at', direction: 'desc' }
+    });
+  };
+
   // Initial Data Fetching
   useEffect(() => {
     if (!isAuthorized) return;
     fetchClients();
-    fetchBank({
-      sort: { column: 'transaction_date', direction: 'desc' }
-    });
-    fetchBilling({
-      filters: [{ column: 'is_reconciled', operator: 'eq', value: false }],
-      sort: { column: 'created_at', direction: 'desc' }
-    });
-  }, [isAuthorized, fetchClients, fetchBank, fetchBilling]);
-
-  const loadUnreconciledData = () => {
-    fetchBank({
-      sort: { column: 'transaction_date', direction: 'desc' }
-    });
-    fetchBilling({
-      filters: [{ column: 'is_reconciled', operator: 'eq', value: false }],
-      sort: { column: 'created_at', direction: 'desc' }
-    });
-  };
+    loadUnreconciledData();
+  }, [isAuthorized, startDate, endDate, fetchClients]);
 
   // Dynamic success rate based on historical data
   const dynamicSuccessRate = useMemo(() => {

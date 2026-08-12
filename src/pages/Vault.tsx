@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useDatabase } from '../hooks/useDatabase';
+import { usePeriod } from '../context/PeriodContext';
 import { supabase } from '../lib/supabase';
 import { DateEngine } from '../utils/DateEngine';
 import { ModalAlert } from '../components/ModalAlert';
@@ -35,6 +36,7 @@ interface IngestionLog {
 
 export const Vault = () => {
   const { profile } = useAuth();
+  const { startDate, endDate } = usePeriod();
   const navigate = useNavigate();
 
   // Role wall: accessible to owner and ops (Accountant)
@@ -140,11 +142,15 @@ export const Vault = () => {
     if (!isAuthorized) return;
 
     fetchBilling({
+      filters: [
+        { column: 'operation_date', operator: 'gte', value: startDate },
+        { column: 'operation_date', operator: 'lte', value: endDate }
+      ],
       sort: { column: 'created_at', direction: 'desc' }
     });
     fetchClients();
     fetchCompanies();
-  }, [isAuthorized, fetchBilling, fetchClients, fetchCompanies]);
+  }, [isAuthorized, startDate, endDate, fetchBilling, fetchClients, fetchCompanies]);
 
   // Group individual billing records into file upload entries
   const uploadGroups = useMemo(() => {
@@ -694,6 +700,10 @@ export const Vault = () => {
             )
           ).then(() => {
             fetchBilling({
+              filters: [
+                { column: 'operation_date', operator: 'gte', value: startDate },
+                { column: 'operation_date', operator: 'lte', value: endDate }
+              ],
               sort: { column: 'created_at', direction: 'desc' }
             });
           });
@@ -766,6 +776,10 @@ export const Vault = () => {
 
       // Reload audit list
       fetchBilling({
+        filters: [
+          { column: 'operation_date', operator: 'gte', value: startDate },
+          { column: 'operation_date', operator: 'lte', value: endDate }
+        ],
         sort: { column: 'created_at', direction: 'desc' }
       });
     } catch (err: any) {
@@ -806,6 +820,10 @@ export const Vault = () => {
       
       showAlert('success', 'Bóveda Limpiada', 'Bóveda limpiada con éxito.');
       fetchBilling({
+        filters: [
+          { column: 'operation_date', operator: 'gte', value: startDate },
+          { column: 'operation_date', operator: 'lte', value: endDate }
+        ],
         sort: { column: 'created_at', direction: 'desc' }
       });
     } catch (err: any) {

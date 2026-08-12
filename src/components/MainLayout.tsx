@@ -1,5 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { usePeriod } from '../context/PeriodContext';
 import {
   LogOut,
   LayoutDashboard,
@@ -15,6 +16,7 @@ import styles from './MainLayout.module.scss';
 
 export const MainLayout = () => {
   const { profile, signOut } = useAuth();
+  const { selectedMonth, setSelectedMonth, monthOptions } = usePeriod();
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
@@ -119,6 +121,20 @@ export const MainLayout = () => {
         {/* TopNavBar */}
         <header className={styles.topHeader}>
           <div className={styles.headerLeft}>
+            <div className={styles.periodSelector}>
+              <span className={styles.periodLabel}>Periodo Filtrado:</span>
+              <select
+                value={selectedMonth}
+                onChange={e => setSelectedMonth(e.target.value)}
+                className={styles.periodSelect}
+              >
+                {monthOptions.map(opt => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className={styles.headerRight}>

@@ -188,6 +188,41 @@
   gap: 16px;
 }
 
+.periodSelector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.periodLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.periodSelect {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: #94a3b8;
+    background: #f1f5f9;
+  }
+
+  &:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 1px #3b82f6;
+  }
+}
+
 .entitySelector {
   display: flex;
   align-items: center;

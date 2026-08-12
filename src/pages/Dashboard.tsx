@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useDatabase } from '../hooks/useDatabase';
 import { useFinancials } from '../hooks/useFinancials';
+import { usePeriod } from '../context/PeriodContext';
 import { supabase } from '../lib/supabase';
 import { DateEngine } from '../utils/DateEngine';
 import type { BillingRecord, BankTransaction, Client, InternalCompany, ClientGroup } from '../types';
@@ -26,6 +27,7 @@ import demoData from '../assets/data.json';
 
 export const Dashboard = () => {
   const { profile, selectedCompanyId } = useAuth();
+  const { selectedMonth, startDate, endDate } = usePeriod();
   const navigate = useNavigate();
 
   // Redirect or block if not owner
@@ -39,13 +41,6 @@ export const Dashboard = () => {
   const { data: companies, fetchData: fetchCompanies } = useDatabase<InternalCompany>('internal_companies');
   const { updateRecord } = useDatabase<Client>('clients');
 
-  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
-    // Default to the current month in local YYYY-MM format
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    return `${year}-${month}`;
-  });
   const [retainerInjections, setRetainerInjections] = useState<BillingRecord[]>([]);
 
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
@@ -67,35 +62,10 @@ export const Dashboard = () => {
 
   const isLoading = loadingBilling || loadingTxs || loadingClients || loadingGroups;
 
-  // Derive date bounds for the selected YYYY-MM month
+  // Derive date bounds for the selected YYYY-MM month from global period context
   const dateRange = useMemo(() => {
-    const [year, month] = selectedMonth.split('-').map(Number);
-    const startStr = `${year}-${String(month).padStart(2, '0')}-01`;
-    const lastDay = new Date(year, month, 0).getDate();
-    const endStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-    return { startStr, endStr };
-  }, [selectedMonth]);
-
-  // Generate selection list for the last 24 months
-  const monthOptions = useMemo(() => {
-    const options = [];
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth();
-
-    for (let i = 0; i < 24; i++) {
-      const d = new Date(currentYear, currentMonth - i, 1);
-      const year = d.getFullYear();
-      const monthNum = d.getMonth() + 1;
-      const val = `${year}-${String(monthNum).padStart(2, '0')}`;
-      
-      const label = d.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
-      const capitalizedLabel = label.charAt(0).toUpperCase() + label.slice(1);
-      
-      options.push({ value: val, label: capitalizedLabel });
-    }
-    return options;
-  }, []);
+    return { startStr: startDate, endStr: endDate };
+  }, [startDate, endDate]);
 
   // Fetch billing records within selected month's range
   useEffect(() => {
@@ -1001,17 +971,6 @@ export const Dashboard = () => {
           </h1>
         </div>
         <div className={styles.headerActions}>
-          <select
-            className={styles.monthSelect}
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-          >
-            {monthOptions.map(opt => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
           <button className={styles.loadBtn} onClick={handleLoadDemoData}>
             Cargar Datos de Demo
           </button>
