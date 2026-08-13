@@ -93,6 +93,17 @@
       border-radius: 4px 0 0 4px;
     }
   }
+
+  .navNotificationDot {
+    position: absolute;
+    top: 12px;
+    left: 26px;
+    width: 8px;
+    height: 8px;
+    background-color: #f59e0b;
+    border-radius: 50%;
+    border: 1.5px solid #000000;
+  }
 }
 
 .sidebarFooter {

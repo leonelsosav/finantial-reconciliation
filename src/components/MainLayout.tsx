@@ -1,6 +1,9 @@
+import { useEffect, useMemo } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { usePeriod } from '../context/PeriodContext';
+import { useDatabase } from '../hooks/useDatabase';
+import type { Client } from '../types';
 import {
   LogOut,
   LayoutDashboard,
@@ -18,6 +21,29 @@ export const MainLayout = () => {
   const { profile, signOut } = useAuth();
   const { selectedMonth, setSelectedMonth, monthOptions } = usePeriod();
   const navigate = useNavigate();
+
+  const { data: clients = [], fetchData: fetchClients } = useDatabase<Client>('clients');
+
+  useEffect(() => {
+    if (profile?.role === 'owner') {
+      fetchClients();
+    }
+
+    const handleClientsUpdated = () => {
+      if (profile?.role === 'owner') {
+        fetchClients();
+      }
+    };
+
+    window.addEventListener('clients-updated', handleClientsUpdated);
+    return () => {
+      window.removeEventListener('clients-updated', handleClientsUpdated);
+    };
+  }, [profile, fetchClients]);
+
+  const hasUngroupedClients = useMemo(() => {
+    return clients.some(c => !c.client_group_id);
+  }, [clients]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -55,6 +81,7 @@ export const MainLayout = () => {
               className={({ isActive }) => `${styles.navItem} ${isActive ? styles.active : ''}`}
             >
               <Users size={18} />
+              {hasUngroupedClients && <span className={styles.navNotificationDot} />}
               <span>Directorio</span>
             </NavLink>
           )}

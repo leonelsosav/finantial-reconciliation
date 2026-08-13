@@ -314,6 +314,8 @@ export const Vault = () => {
     const parsedInvoices: any[] = [];
     const tempLogs: IngestionLog[] = [];
     const uuidToFilenameMap = new Map<string, string>();
+    const activeClientsList = [...clients];
+    let createdClientsCount = 0;
 
     // Helper to read file text content
     const readFileText = (file: File): Promise<string> => {
@@ -399,11 +401,11 @@ export const Vault = () => {
         }
 
         // 2. Match Client by Receptor RFC (case-insensitive)
-        let matchedClient = clients.find(c => c.tax_id?.trim().toUpperCase() === receptorRfc.trim().toUpperCase());
+        let matchedClient = activeClientsList.find(c => c.tax_id?.trim().toUpperCase() === receptorRfc.trim().toUpperCase());
 
         // Substring / Name fallback if RFC does not match directly
         if (!matchedClient && receptorNombre) {
-          matchedClient = clients.find(c => 
+          matchedClient = activeClientsList.find(c => 
             receptorNombre.toLowerCase().includes(c.name.toLowerCase()) ||
             c.name.toLowerCase().includes(receptorNombre.toLowerCase()) ||
             (c.legal_name && (receptorNombre.toLowerCase().includes(c.legal_name.toLowerCase()) || c.legal_name.toLowerCase().includes(receptorNombre.toLowerCase()))) ||
@@ -416,25 +418,51 @@ export const Vault = () => {
 
         if (!clientId && isIntercompany) {
           // If Receptor is an internal company, try to match by RFC in clients table first
-          const intercompanyClient = clients.find(c => c.tax_id?.trim().toUpperCase() === receptorRfc.trim().toUpperCase());
+          const intercompanyClient = activeClientsList.find(c => c.tax_id?.trim().toUpperCase() === receptorRfc.trim().toUpperCase());
           if (intercompanyClient) {
             clientId = intercompanyClient.id;
+            matchedClient = intercompanyClient;
           } else {
             // Fallback to first client under the resolved company or first globally to satisfy DB constraint
-            const companyClients = clients.filter(c => c.internal_company_id === internalCompanyId);
+            const companyClients = activeClientsList.filter(c => c.internal_company_id === internalCompanyId);
             if (companyClients.length > 0) {
               clientId = companyClients[0].id;
-            } else if (clients.length > 0) {
-              clientId = clients[0].id;
+              matchedClient = companyClients[0];
+            } else if (activeClientsList.length > 0) {
+              clientId = activeClientsList[0].id;
+              matchedClient = activeClientsList[0];
             }
           }
         }
 
         if (!clientId) {
-          throw new Error(`Receptor (${receptorRfc}) no registrado en el catálogo de clientes.`);
+          // Auto-create client record since it is a new client from invoice
+          const { data: newClient, error: createClientErr } = await supabase
+            .from('clients')
+            .insert({
+              tax_id: receptorRfc.trim().toUpperCase(),
+              name: receptorNombre?.trim() || receptorRfc,
+              legal_name: receptorNombre?.trim() || receptorRfc,
+              commercial_name: receptorNombre?.trim() || receptorRfc,
+              internal_company_id: internalCompanyId,
+              commission_percentage: 0,
+              retainer_balance: 0,
+              client_group_id: null
+            })
+            .select()
+            .single();
+
+          if (createClientErr) {
+            throw new Error(`Error al crear cliente automático: ${createClientErr.message}`);
+          }
+
+          activeClientsList.push(newClient);
+          clientId = newClient.id;
+          matchedClient = newClient;
+          createdClientsCount++;
         }
 
-        const clientObj = clients.find(c => c.id === clientId);
+        const clientObj = matchedClient;
         const commissionPercent = clientObj?.commission_percentage || 0;
 
         const isCanceledPath = (file.webkitRelativePath || '').toLowerCase().includes('cancelado');
@@ -706,7 +734,10 @@ export const Vault = () => {
               ],
               sort: { column: 'created_at', direction: 'desc' }
             });
+            fetchClients();
           });
+        } else {
+          fetchClients();
         }
       }
 
@@ -752,6 +783,9 @@ export const Vault = () => {
       if (uniqueParsedInvoices.length > 0) {
         message += `- Cargadas con éxito: ${uniqueParsedInvoices.length} facturas\n`;
       }
+      if (createdClientsCount > 0) {
+        message += `- Nuevos clientes auto-creados: ${createdClientsCount}\n`;
+      }
       const cancelUpdatesCount = tempLogs.filter(l => l.message.includes('cancelada con éxito')).length;
       if (cancelUpdatesCount > 0) {
         message += `- Facturas existentes marcadas como canceladas: ${cancelUpdatesCount}\n`;
@@ -766,9 +800,9 @@ export const Vault = () => {
 
       if (totalDuplicatesCount > 0) {
         if (uniqueParsedInvoices.length === 0) {
-          showAlert('error', 'Carga Omitida (Duplicados)', `No se guardó ninguna factura. Todas las facturas del lote (${totalDuplicatesCount}) ya están registradas o repetidas.`);
+          showAlert('error', 'Carga Omitida (Duplicados)', `No se guardó ninguna factura. Todas las facturas del lote (${totalDuplicatesCount}) ya están registradas o repetidas.${createdClientsCount > 0 ? `\n\n- Se crearon ${createdClientsCount} clientes nuevos en el catálogo.` : ''}`);
         } else {
-          showAlert('info', 'Carga Realizada con Advertencia', `Se guardaron ${uniqueParsedInvoices.length} facturas nuevas, pero se omitieron ${totalDuplicatesCount} facturas duplicadas.\n\nRevise el reporte de alertas para ver los detalles.`);
+          showAlert('info', 'Carga Realizada con Advertencia', `Se guardaron ${uniqueParsedInvoices.length} facturas nuevas, pero se omitieron ${totalDuplicatesCount} facturas duplicadas.${createdClientsCount > 0 ? `\n\n- Se crearon ${createdClientsCount} clientes nuevos en el catálogo.` : ''}\n\nRevise el reporte de alertas para ver los detalles.`);
         }
       } else {
         showAlert('success', 'Ingestión Completada', message);

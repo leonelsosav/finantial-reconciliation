@@ -100,6 +100,7 @@ export const Directory = () => {
 
   // Dropdown active menus
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [selectedGroups, setSelectedGroups] = useState<Record<string, string>>({});
 
   const [modalConfig, setModalConfig] = useState<{
     isOpen: boolean;
@@ -200,6 +201,10 @@ export const Directory = () => {
       return null;
     }).filter(Boolean) as (ClientGroup & { subs: Client[] })[];
   }, [clientGroups, clients, searchQuery]);
+
+  const ungroupedClients = useMemo(() => {
+    return clients.filter(c => !c.client_group_id);
+  }, [clients]);
 
   // --- INTERNAL COMPANIES TAB CALCULATIONS ---
   const mtdBilled = useMemo(() => {
@@ -334,6 +339,7 @@ export const Directory = () => {
         alert('Razón social actualizada con éxito.');
         setIsClientDrawerOpen(false);
         fetchClients();
+        window.dispatchEvent(new Event('clients-updated'));
       } catch (err: any) {
         console.error('Error updating client:', err);
         alert('Error al guardar: ' + err.message);
@@ -347,6 +353,7 @@ export const Directory = () => {
         alert('Nueva razón social registrada con éxito.');
         setIsClientDrawerOpen(false);
         fetchClients();
+        window.dispatchEvent(new Event('clients-updated'));
       } catch (err: any) {
         console.error('Error creating client:', err);
         alert('Error al registrar: ' + err.message);
@@ -362,9 +369,31 @@ export const Directory = () => {
     try {
       await deleteClient(client.id);
       fetchClients();
+      window.dispatchEvent(new Event('clients-updated'));
     } catch (err: any) {
       console.error('Error deleting client:', err);
       alert('Error al eliminar la razón social: ' + err.message);
+    }
+  };
+
+  const handleSelectGroup = (clientId: string, groupId: string) => {
+    setSelectedGroups(prev => ({ ...prev, [clientId]: groupId }));
+  };
+
+  const handleAssignGroup = async (clientId: string) => {
+    const groupId = selectedGroups[clientId];
+    if (!groupId) {
+      alert('Por favor seleccione un grupo de clientes.');
+      return;
+    }
+    try {
+      await updateClient(clientId, { client_group_id: groupId });
+      alert('Cliente asignado al grupo con éxito.');
+      fetchClients();
+      window.dispatchEvent(new Event('clients-updated'));
+    } catch (err: any) {
+      console.error('Error assigning client to group:', err);
+      alert('Error al asignar grupo: ' + err.message);
     }
   };
 
@@ -1046,6 +1075,76 @@ export const Directory = () => {
                 </tbody>
               </table>
             </div>
+
+            {/* Clientes sin Grupo / Auto-creados */}
+            {ungroupedClients.length > 0 && (
+              <div className={styles.ungroupedSection}>
+                <div className={styles.sectionHeader}>
+                  <h3>Razones Sociales sin Asignar (Creados por Factura)</h3>
+                  <span className={styles.warningPill}>{ungroupedClients.length} Pendiente(s)</span>
+                </div>
+                <p className={styles.sectionSubtext}>
+                  Estas razones sociales se crearon automáticamente al subir facturas de receptores no registrados. Asígnalos a un grupo para consolidar su saldo y comisión.
+                </p>
+                <div className={styles.ungroupedTableContainer}>
+                  <table className={styles.childTable}>
+                    <thead>
+                      <tr>
+                        <th>Nombre Comercial</th>
+                        <th>Empresa Vinculada</th>
+                        <th>RFC / Razón Social</th>
+                        <th style={{ width: '220px' }}>Asignar a Grupo</th>
+                        <th style={{ width: '120px' }}>Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ungroupedClients.map(client => {
+                        const selectedGroupId = selectedGroups[client.id] || '';
+                        return (
+                          <tr key={client.id} className={styles.childRow}>
+                            <td className={styles.childName}>{client.name}</td>
+                            <td className={styles.companyLinked}>
+                              {companies.find(comp => comp.id === client.internal_company_id)?.name || 'Desconocida'}
+                            </td>
+                            <td>
+                              <div className={styles.rfcGroup}>
+                                <span className={styles.rfcCode}>{client.tax_id || 'SIN RFC'}</span>
+                                {client.legal_name && (
+                                  <span className={styles.legalName}>{client.legal_name}</span>
+                                )}
+                              </div>
+                            </td>
+                            <td>
+                              <select
+                                className={styles.groupSelect}
+                                value={selectedGroupId}
+                                onChange={(e) => handleSelectGroup(client.id, e.target.value)}
+                              >
+                                <option value="">-- Seleccionar Grupo --</option>
+                                {clientGroups.map(g => (
+                                  <option key={g.id} value={g.id}>
+                                    {g.group_name}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td>
+                              <button
+                                className={styles.assignBtn}
+                                onClick={() => handleAssignGroup(client.id)}
+                                disabled={!selectedGroupId}
+                              >
+                                Asignar
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}
