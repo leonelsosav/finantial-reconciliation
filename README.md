@@ -1,73 +1,104 @@
-# React + TypeScript + Vite
+# Karpi Finanzas — Reconciliation System
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Welcome to the **Karpi Finanzas** codebase! This application is a high-performance financial reconciliation system built with React, TypeScript, Vite, and Supabase. It provides complete tools to import, parse, match, and reconcile bank statement transactions against billing provision records (invoices), commissions, and internal companies.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Table of Contents
+1. [Tech Stack Overview](#tech-stack-overview)
+2. [Project Architecture & Design Principles](#project-architecture--design-principles)
+3. [Directory Structure](#directory-structure)
+4. [Domain Model & Database Schema](#domain-model--database-schema)
+5. [Core Operations & Workflows](#core-operations--workflows)
+6. [Getting Started](#getting-started)
 
-## React Compiler
+---
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Tech Stack Overview
+- **Core Framework:** React 18+ powered by Vite.
+- **Language:** TypeScript strictly configured (no implicit `any`).
+- **Database / Backend:** Supabase (Auth, PostgreSQL DB client).
+- **Styling:** SCSS CSS Modules (`*.module.scss`) for component-level local styling.
+- **Routing:** React Router v6.
+- **Iconography:** `lucide-react`.
 
-## Expanding the ESLint configuration
+---
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Project Architecture & Design Principles
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+The application relies on a **layered, decoupled design** where presentation, business logic, and database access are strictly separated:
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```
+[Pages / Components] ──(Uses Hooks)──> [Custom Hooks] ──(Calls Services)──> [Services] ──(Queries SDK)──> [Supabase Backend]
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### 1. Smart vs. Dumb Components
+- **Pages** (`src/pages/`): Act as the "smart" stateful orchestrators. They handle page-level routing, query databases, execute business mutations, and pass props downwards.
+- **Components** (`src/components/`): Act as "dumb" presentational units or isolated modals. They receive raw props, render responsive layouts, and propagate user action signals upward via callbacks.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+### 2. Service Layer Abstraction
+- Components and Pages never query Supabase/Database clients directly. They hook into custom state wrappers (`useDatabase`), which utilize specialized TypeScript services (`DatabaseService`) encapsulating the database SDK.
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### 3. Local Time Safety
+- JavaScript dates are prone to timezone offset bugs (e.g. UTC offsets shifting calendar dates). The codebase routes all date evaluations exclusively through a custom utility class `DateEngine` (`src/utils/DateEngine.ts`) using local date formats.
+
+---
+
+## Directory Structure
+
 ```
+├── src/
+│   ├── components/       # Reusable UI components & isolated modal surfaces
+│   ├── context/          # Global React Context providers (PeriodContext, etc.)
+│   ├── hooks/            # Custom React hooks (useDatabase, useAuth)
+│   ├── lib/              # SDK initialization libraries (supabase.ts)
+│   ├── pages/            # Top-level smart containers & route entries
+│   ├── services/         # Pure TypeScript service classes (Reconciliation, StatementParser)
+│   ├── types/            # Centralized TypeScript domain declarations (index.ts, auth.ts)
+│   ├── utils/            # Pure, React-agnostic formatting & operational helpers
+│   ├── App.tsx           # Application entry and layout wrapper
+│   └── main.tsx          # DOM initialization
+```
+
+---
+
+## Domain Model & Database Schema
+
+The core database collections are declared in [src/types/index.ts](file:///Users/leonel/Documents/Desarrollo/react-sites/financial-reconciliation/src/types/index.ts):
+
+*   **`clients`**: Contains customer data, commissions, RFCs, and their corresponding group links.
+*   **`client_groups`**: High-level groups containing client records.
+*   **`internal_companies`**: Entities representing internal companies.
+*   **`billing_records`**: XML-invoiced CFDI provision data.
+*   **`bank_transactions`**: Transactions imported from bank statements.
+
+---
+
+## Core Operations & Workflows
+
+### 1. XML Ingestion & Client Auto-Creation
+- In [Vault.tsx](file:///Users/leonel/Documents/Desarrollo/react-sites/financial-reconciliation/src/pages/Vault.tsx), users upload bulk XML files.
+- The parser matches receptor RFC codes to existing clients. If a matching client is not found, the system auto-registers the new client dynamically using the XML receptor details to prevent load interruption.
+- A warning count is shown in the success alert, and a notification dot is added to the navigation sidebar using a lightweight window event dispatcher (`clients-updated`).
+
+### 2. Reconciliation matching
+- Matches bank transactions against billing records based on RFC codes, payment amounts, and transaction periods.
+- Provides visual aids to mark transactions as reconciled or link unmatched items.
+
+---
+
+## Getting Started
+
+### Local Setup
+1. Clone the repository and install dependencies:
+   ```bash
+   npm install
+   ```
+2. Start the local Vite development server:
+   ```bash
+   npm run dev
+   ```
+3. To compile the production build:
+   ```bash
+   npm run build
+   ```
