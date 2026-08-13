@@ -50,7 +50,6 @@ export const Vault = () => {
   // Ingestion state
   const [dragActive, setDragActive] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
 
   const [uploadProgress, setUploadProgress] = useState(0);
   const [activeUploadFile, setActiveUploadFile] = useState<string | null>(null);
@@ -833,39 +832,6 @@ export const Vault = () => {
       setActiveUploadFile(null);
       setUploadProgress(0);
     }
-  };  const handleClearVault = () => {
-    showAlert(
-      'confirm',
-      'Limpiar Bóveda',
-      '¿Está seguro de que desea limpiar la bóveda? Esto eliminará todas las facturas de la base de datos.',
-      runClearVault
-    );
-  };
-
-  const runClearVault = async () => {
-    setIsDeleting(true);
-    try {
-      const { error } = await supabase
-        .from('billing_records')
-        .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000');
-
-      if (error) throw error;
-      
-      showAlert('success', 'Bóveda Limpiada', 'Bóveda limpiada con éxito.');
-      fetchBilling({
-        filters: [
-          { column: 'operation_date', operator: 'gte', value: startDate },
-          { column: 'operation_date', operator: 'lte', value: endDate }
-        ],
-        sort: { column: 'created_at', direction: 'desc' }
-      });
-    } catch (err: any) {
-      console.error('Error al limpiar la bóveda:', err);
-      showAlert('error', 'Error al Limpiar', `Error al limpiar la bóveda: ${err.message}`);
-    } finally {
-      setIsDeleting(false);
-    }
   };
 
 
@@ -997,14 +963,6 @@ export const Vault = () => {
                     onClick={() => document.getElementById('canceled-upload-input')?.click()}
                   >
                     Cargar Canceladas (XMLs)
-                  </button>
-                  <button 
-                    type="button" 
-                    className={styles.clearBtn}
-                    onClick={handleClearVault}
-                    disabled={isDeleting}
-                  >
-                    {isDeleting ? 'Limpiando...' : 'Limpiar Bóveda'}
                   </button>
                 </div>
               </div>
