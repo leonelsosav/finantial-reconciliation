@@ -625,6 +625,9 @@ export const Directory = () => {
         if (lower === 'raul buitron') return 'Raul Buitron';
         if (lower === 'ramon solis') return 'Ramon Solis';
         if (lower === 'cadu') return 'CADU';
+        if (lower === 'jorge-karpi' || lower === 'jorge-karpy') return 'Jorge-Karpy';
+        if (lower === 'leny - karpy' || lower === 'leny-karpy') return 'Leny-Karpy';
+        if (lower === 'suegra fabricio' || lower === 'suegra de fabricio') return 'Suegra de Fabricio';
         return cleaned;
       };
 
@@ -633,9 +636,10 @@ export const Directory = () => {
         const row = clientsRows[i];
         if (row.length >= 5) {
           const clientName = row[2].trim();
-          let clientRfc = row[3].trim();
+          let clientRfc = row[3].trim().toUpperCase();
           if (clientRfc === 'CCO780104EW') clientRfc = 'CCO780104EW1';
           if (clientRfc === 'FER210219V3') clientRfc = 'FER210219V30';
+          if (clientRfc === 'CMA080116QM9') clientRfc = 'CMA080116QM8';
 
           if (clientName && clientName !== 'CANCELADO' && clientName !== '') {
             const correctedName = getNormalizedClientName(clientRfc, clientName);
@@ -663,10 +667,10 @@ export const Directory = () => {
       for (let i = 1; i < clientsRows.length; i++) {
         const row = clientsRows[i];
         if (row.length >= 5) {
-          const rfcEmp = row[1] ? row[1].replace('RFC:', '').trim() : '';
+          const rfcEmp = row[1] ? row[1].replace('RFC:', '').trim().toUpperCase() : '';
           const clientFriendly = row[2].trim();
-          let clientRfc = row[3].trim();
-          let clientRazon = row[4].trim();
+          let clientRfc = row[3].trim().toUpperCase();
+          let clientRazon = row[4].trim().toUpperCase();
 
           if (!clientFriendly || clientFriendly === 'CANCELADO' || !clientRfc || clientRfc === 'CANCELADO') {
             continue;
@@ -678,6 +682,9 @@ export const Directory = () => {
           }
           if (clientRfc === 'FER210219V3') {
             clientRfc = 'FER210219V30';
+          }
+          if (clientRfc === 'CMA080116QM9') {
+            clientRfc = 'CMA080116QM8';
           }
 
           // Discard incorrect Marketing Digital for RFC CMA160510LU4
@@ -982,6 +989,7 @@ export const Directory = () => {
                                     <thead>
                                       <tr>
                                         <th>Nombre Comercial</th>
+                                        <th>Empresa Vinculada</th>
                                         <th>RFC / Razón Social</th>
                                         <th>Comisión (%)</th>
                                         <th className={styles.alignRight}>Fondo de Garantía</th>
@@ -992,6 +1000,9 @@ export const Directory = () => {
                                       {group.subs.map(client => (
                                         <tr key={client.id} className={styles.childRow}>
                                           <td className={styles.childName}>{client.name}</td>
+                                          <td className={styles.companyLinked}>
+                                            {companies.find(comp => comp.id === client.internal_company_id)?.name || 'Desconocida'}
+                                          </td>
                                           <td>
                                             <div className={styles.rfcGroup}>
                                               <span className={styles.rfcCode}>{client.tax_id || 'SIN RFC'}</span>

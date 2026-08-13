@@ -844,6 +844,26 @@
   font-size: 12px;
 }
 
+.nameWithBadge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.companyBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #64748b;
+  background-color: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 3px;
+  line-height: 1;
+}
+
 .numCell {
   text-align: right;
   font-family: 'JetBrains Mono', monospace;

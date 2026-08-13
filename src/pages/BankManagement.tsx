@@ -792,11 +792,13 @@ export const BankManagement = () => {
                             }}
                           >
                             <option value="">-- No asignado (Opex/Excepción) --</option>
-                            {clients.map(c => (
-                              <option key={c.id} value={c.id}>
-                                {c.legal_name || c.name}
-                              </option>
-                            ))}
+                            {clients
+                              .filter(c => c.internal_company_id === selectedCompanyId)
+                              .map(c => (
+                                <option key={c.id} value={c.id}>
+                                  {c.legal_name || c.name}
+                                </option>
+                              ))}
                           </select>
                         </td>
                         <td className={`${styles.alignRight} ${row.amount >= 0 ? styles.positiveText : styles.negativeText} ${styles.monoText}`}>

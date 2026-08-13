@@ -304,6 +304,7 @@ export const Dashboard = () => {
           id: client.id,
           name: client.name,
           legal_name: client.legal_name || client.name,
+          internal_company_id: client.internal_company_id,
           values: colValues,
           total: clientTotal
         };
@@ -354,6 +355,7 @@ export const Dashboard = () => {
           id: client.id,
           name: client.name,
           legal_name: client.legal_name || client.name,
+          internal_company_id: client.internal_company_id,
           values: colValues,
           total: clientTotal
         };
@@ -1132,7 +1134,14 @@ export const Dashboard = () => {
                 return (
                   <div key={client.id} className={styles.healthItem} onClick={() => handleOpenDrawer(client)}>
                     <div className={styles.healthMeta}>
-                      <span className={styles.clientName}>{client.commercial_name || client.name}</span>
+                      <div className={styles.nameWithBadge}>
+                        <span className={styles.clientName}>{client.commercial_name || client.name}</span>
+                        {companies.find(comp => comp.id === client.internal_company_id) && (
+                          <span className={styles.companyBadge}>
+                            {companies.find(comp => comp.id === client.internal_company_id)?.name}
+                          </span>
+                        )}
+                      </div>
                       <span className={styles.healthPct}>{formatCurrency(client.retainer_balance || 0)}</span>
                     </div>
                     <div className={styles.progressTrack}>
@@ -1211,7 +1220,14 @@ export const Dashboard = () => {
                       {isExpanded && group.clients.map(client => (
                         <tr key={client.id} className={styles.childRow}>
                           <td className={styles.stickyColumn}>
-                            <span className={styles.childName}>{client.legal_name}</span>
+                            <div className={styles.nameWithBadge}>
+                              <span className={styles.childName}>{client.legal_name}</span>
+                              {companies.find(comp => comp.id === client.internal_company_id) && (
+                                <span className={styles.companyBadge}>
+                                  {companies.find(comp => comp.id === client.internal_company_id)?.name}
+                                </span>
+                              )}
+                            </div>
                           </td>
                           {matrixColumns.map(col => (
                             <td key={col.id} className={styles.numCell}>
@@ -1530,18 +1546,24 @@ export const Dashboard = () => {
               ) : (
                 <div className={styles.clientList}>
                   <p className={styles.subText}>Seleccione una entidad para modificar sus coeficientes y saldos.</p>
-                  {processedClients.map(c => (
-                    <div key={c.id} className={styles.clientItem} onClick={() => handleOpenDrawer(c)}>
-                      <div className={styles.clientInfo}>
-                        <strong>{c.commercial_name || c.name}</strong>
-                        <span>{c.legal_name || 'Sin Razón Social'}</span>
+                  {processedClients.map(c => {
+                    const compName = companies.find(comp => comp.id === c.internal_company_id)?.name;
+                    return (
+                      <div key={c.id} className={styles.clientItem} onClick={() => handleOpenDrawer(c)}>
+                        <div className={styles.clientInfo}>
+                          <div className={styles.nameWithBadge}>
+                            <strong>{c.commercial_name || c.name}</strong>
+                            {compName && <span className={styles.companyBadge}>{compName}</span>}
+                          </div>
+                          <span>{c.legal_name || 'Sin Razón Social'}</span>
+                        </div>
+                        <div className={styles.clientStats}>
+                          <span className={styles.balance}>{formatCurrency(c.retainer_balance || 0)}</span>
+                          <span className={styles.badge}>{c.commission_percentage || 0}% Comisión</span>
+                        </div>
                       </div>
-                      <div className={styles.clientStats}>
-                        <span className={styles.balance}>{formatCurrency(c.retainer_balance || 0)}</span>
-                        <span className={styles.badge}>{c.commission_percentage || 0}% Comisión</span>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
