@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { usePeriod } from '../context/PeriodContext';
@@ -13,7 +13,9 @@ import {
   Plus,
   CloudUpload,
   Users,
-  HelpCircle
+  HelpCircle,
+  Menu,
+  X
 } from 'lucide-react';
 import styles from './MainLayout.module.scss';
 
@@ -21,6 +23,7 @@ export const MainLayout = () => {
   const { profile, signOut } = useAuth();
   const { selectedMonth, setSelectedMonth, monthOptions } = usePeriod();
   const navigate = useNavigate();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const { data: clients = [], fetchData: fetchClients } = useDatabase<Client>('clients');
 
@@ -52,16 +55,33 @@ export const MainLayout = () => {
 
   return (
     <div className={styles.layout}>
+      {/* Backdrop overlay for mobile view */}
+      {isMobileMenuOpen && (
+        <div
+          className={styles.sidebarBackdrop}
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
       {/* Global SideNavBar */}
-      <aside className={styles.sidebar}>
-        <div className={styles.logoContainer}>
-          <div className={styles.logoIcon}>
-            <Building2 size={18} />
+      <aside className={`${styles.sidebar} ${isMobileMenuOpen ? styles.mobileOpen : ''}`}>
+        <div className={styles.sidebarHeader}>
+          <div className={styles.logoContainer}>
+            <div className={styles.logoIcon}>
+              <Building2 size={18} />
+            </div>
+            <div>
+              <h1 className={styles.logoTitle}>Karpi</h1>
+              <p className={styles.logoSub}>Karpi Finanzas</p>
+            </div>
           </div>
-          <div>
-            <h1 className={styles.logoTitle}>Karpi</h1>
-            <p className={styles.logoSub}>Karpi Finanzas</p>
-          </div>
+          <button
+            onClick={() => setIsMobileMenuOpen(false)}
+            className={styles.sidebarCloseBtn}
+            aria-label="Close menu"
+          >
+            <X size={20} />
+          </button>
         </div>
 
         <nav className={styles.nav}>
@@ -69,6 +89,7 @@ export const MainLayout = () => {
             <NavLink
               to="/"
               className={({ isActive }) => `${styles.navItem} ${isActive ? styles.active : ''}`}
+              onClick={() => setIsMobileMenuOpen(false)}
             >
               <LayoutDashboard size={18} />
               <span>Dashboard</span>
@@ -79,6 +100,7 @@ export const MainLayout = () => {
             <NavLink
               to="/directory"
               className={({ isActive }) => `${styles.navItem} ${isActive ? styles.active : ''}`}
+              onClick={() => setIsMobileMenuOpen(false)}
             >
               <Users size={18} />
               {hasUngroupedClients && <span className={styles.navNotificationDot} />}
@@ -90,6 +112,7 @@ export const MainLayout = () => {
             <NavLink
               to="/reconciliation"
               className={({ isActive }) => `${styles.navItem} ${isActive ? styles.active : ''}`}
+              onClick={() => setIsMobileMenuOpen(false)}
             >
               <ShieldCheck size={18} />
               <span>Conciliaciones</span>
@@ -100,6 +123,7 @@ export const MainLayout = () => {
             <NavLink
               to="/vault"
               className={({ isActive }) => `${styles.navItem} ${isActive ? styles.active : ''}`}
+              onClick={() => setIsMobileMenuOpen(false)}
             >
               <CloudUpload size={18} />
               <span>Cargar Facturas</span>
@@ -110,6 +134,7 @@ export const MainLayout = () => {
             <NavLink
               to="/bank"
               className={({ isActive }) => `${styles.navItem} ${isActive ? styles.active : ''}`}
+              onClick={() => setIsMobileMenuOpen(false)}
             >
               <Landmark size={18} />
               <span>Gestión de Bancos</span>
@@ -119,6 +144,7 @@ export const MainLayout = () => {
           <NavLink
             to="/help"
             className={({ isActive }) => `${styles.navItem} ${isActive ? styles.active : ''}`}
+            onClick={() => setIsMobileMenuOpen(false)}
           >
             <HelpCircle size={18} />
             <span>Soporte y Ayuda</span>
@@ -128,7 +154,10 @@ export const MainLayout = () => {
         <div className={styles.sidebarFooter}>
           {profile?.role !== 'ops' && (
             <button
-              onClick={() => navigate('/reconciliation', { state: { triggerUpload: true } })}
+              onClick={() => {
+                setIsMobileMenuOpen(false);
+                navigate('/reconciliation', { state: { triggerUpload: true } });
+              }}
               className={styles.newReconBtn}
             >
               <Plus size={16} />
@@ -148,6 +177,13 @@ export const MainLayout = () => {
         {/* TopNavBar */}
         <header className={styles.topHeader}>
           <div className={styles.headerLeft}>
+            <button
+              onClick={() => setIsMobileMenuOpen(true)}
+              className={styles.menuToggleBtn}
+              aria-label="Toggle menu"
+            >
+              <Menu size={20} />
+            </button>
             <div className={styles.periodSelector}>
               <span className={styles.periodLabel}>Periodo Filtrado:</span>
               <select
